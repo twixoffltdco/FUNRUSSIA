@@ -19,7 +19,7 @@
 ![Platform](https://img.shields.io/badge/Platform-Win%20%7C%20Linux-lightgrey?style=for-the-badge)
 
 </div>
----
+
 
 ## ✨ Возможности
 
