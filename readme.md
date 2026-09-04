@@ -7,7 +7,18 @@
 
 > Современная, оптимизированная сборка SA-MP на базе мода Кранин.  
 > Скачал → настроил → запустил. Без лишнего мусора.
+<div align="center">
 
+# 🇷🇺 FUNRUSSIA (Beta)
+
+### Современная SA-MP сборка на базе мода Кранин
+
+![Status](https://img.shields.io/badge/Status-Production-brightgreen?style=for-the-badge)
+![Language](https://img.shields.io/badge/Language-Pawn-orange?style=for-the-badge)
+![Database](https://img.shields.io/badge/Database-MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Win%20%7C%20Linux-lightgrey?style=for-the-badge)
+
+</div>
 ---
 
 ## ✨ Возможности
