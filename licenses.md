@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🇷🇺 FUNRUSSIA
+# 🇷🇺 FUNRUSSIA (Beta)
 
 ### Современная SA-MP сборка на базе мода Кранин
 
