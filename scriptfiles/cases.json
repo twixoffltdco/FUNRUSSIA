@@ -10,7 +10,8 @@
     ],
     "eventCaseIds": [
       19,
-      20
+      20,
+      6
     ]
   },
   "banners": [
@@ -22,8 +23,8 @@
       "backGroundImage": "bg_cases_banner.png",
       "rightImage": "img_cases_right_image_part_1.png",
       "caseRewardsPreviewId": "24",
-      "startTime": 1774922400,
-      "endTime": 1778724000
+      "startTime": 0,
+      "endTime": 2000000000
     },
     {
       "bannerId": 2,
@@ -1833,8 +1834,8 @@
       "id": 6,
       "name": "КЕЙС: К ВЕРШИНАМ",
       "dates": [
-        1723082400,
-        1724810400
+        1788202800,
+        1798743599
       ],
       "price": [
         900,
@@ -5077,8 +5078,8 @@
       "id": 16,
       "name": "КЕЙС: ПРОЛОГ ТАЙНЫ",
       "dates": [
-        1761530400,
-        1762999200
+        0,
+        2000000000
       ],
       "price": [
         900,
