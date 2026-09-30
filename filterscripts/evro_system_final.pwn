@@ -170,10 +170,10 @@ public ShowEvroTop(playerid)
     }
 
     strcat(str, "\n{999999}Обновлено: ");
-    new y, m, d, h, mi, sec;
-    getdate(y, m, d);
-    gettime(h, mi, sec);
-    format(line, sizeof(line), "%02d/%02d/%04d %02d:%02d", d, m, y, h, mi);
+    new date_str[3], time_str[3];
+    getdate(date_str[0], date_str[1], date_str[2]);
+    gettime(time_str[0], time_str[1], time_str[2]);
+    format(line, sizeof(line), "%02d/%02d/%04d %02d:%02d", date_str[0], date_str[1], date_str[2], time_str[0], time_str[1]);
     strcat(str, line);
 
     ShowPlayerDialog(playerid, DIALOG_UNUSED, DIALOG_STYLE_MSGBOX, "{FFCC00}Топ покупателей евро", str, "Закрыть", "");
