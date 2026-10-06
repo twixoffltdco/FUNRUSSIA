@@ -17,6 +17,63 @@
 [![Версия](https://img.shields.io/badge/Version-2.5-orange.svg)]()
 
 ---
+⚖️ DISCLAIMER
+Fun Russia is an independent project. We are not affiliated with Rockstar Games, Take-Two Interactive, or the creators of GTA San Andreas / SA-MP. All in-game assets are used in accordance with fair use and community modding standards.
+Made with ❤️ and ☕ by FUN GAMES Studio. 2026
+
+***
+ ⚠️ Важно: Данный репозиторий является официальным источником кода Fun Russia. Любые другие "слитые" версии на сторонних ресурсах являются устаревшими, модифицированными или вредоносными. Используйте только этот код.
+ # 🎮 FUN RUSSIA | Open Source CRMP Project
+
+![Status](https://img.shields.io/badge/status-active-success)
+![Language](https://img.shields.io/badge/language-PAWN/C%2B%2B-orange)
+![License](https://img.shields.io/badge/license-Open%20Source-blue)
+![Build](https://img.shields.io/badge/build-16.94-stable)
+
+> **Мы не следуем трендам. Мы создаем их.**  
+> Fun Russia — это прозрачная, оптимизированная и честная игровая экосистема. Никаких слитых сборок, скрытых бэкдоров или чужих водяных знаков. Только чистый код и уважение к комьюнити.
+
+---
+
+## 📌 О ПРОЕКТЕ
+
+Fun Russia разрабатывается командой **FUN GAMES Studio**. Мы взяли лучшие механики жанра, переосмыслили их и написали свою архитектуру с нуля, сделав упор на:
+- ⚡ **Максимальную оптимизацию** (стабильные 80+ FPS на мобильных устройствах и ПК).
+- 🔓 **Полную прозрачность** (весь исходный код доступен для аудита).
+- 🛡️ **Безопасность** (собственные античит-решения и чистые билды).
+- 🎯 **Новый уровень геймплея** (включая выделенную, оптимизированную DM-зону).
+
+---
+
+## 🚀 НАШ ПУТЬ (ЭВОЛЮЦИЯ)
+
+`FlexDev` → `GitGoida` → `StreamLive` → `CR World` → **`Fun Russia`**
+
+Мы прошли путь от небольших экспериментов до полноценной игровой экосистемы, и этот репозиторий — фундамент нашего текущего проекта.
+
+---
+
+## 👥 CORE TEAM
+
+- 👨‍💼 **Twixoff** — CEO & Project Lead
+- 👨‍💻 **Marco** — Lead Developer
+- 🎨 **Alex** — Game Designer & UI/UX
+
+---
+
+## 🛠️ ТЕХНОЛОГИИ И СТРУКТУРА
+
+- **Ядро мода**: PAWN (оптимизированные скрипты, чистая архитектура без спагетти-кода).
+- **Лаунчер**: C++ / C# (билд 16.94, стабильная загрузка и автообновление).
+- **База данных**: MySQL (оптимизированные запросы, защита от инъекций).
+- **Репозиторий**: Gitverse (прозрачная история коммитов).
+
+*(Здесь можно добавить краткое описание папок, например:)*
+```text
+📁 /gamemodes   - Основной код игрового режима
+📁 /filterscripts - Опциональные скрипты (DM-зона, ивенты)
+📁 /pawno/include - Кастомные инклуды и библиотеки FUN GAMES
+📁 /launcher    - Исходный код лаунчера (если открыт)
 
 ## 📌 КЛЮЧЕВЫЕ СИСТЕМЫ МОДА
 
