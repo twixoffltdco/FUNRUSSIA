@@ -56,8 +56,8 @@ Fun Russia разрабатывается командой **FUN GAMES Studio**.
 ## 👥 CORE TEAM
 
 - 👨‍💼 **Twixoff** — CEO & Project Lead
-- 👨‍💻 **Marco** — Lead Developer
-- 🎨 **Alex** — Game Designer & UI/UX
+- 👨‍💻 **Marko** — Lead Developer
+- 🎨 **Alexbus** — Game Designer & UI/UX
 
 ---
 
