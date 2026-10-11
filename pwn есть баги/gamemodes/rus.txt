@@ -1,0 +1,8 @@
+C:\Users\slimp\Downloads\server (3)\МОД С ФТП\МОД С ФТП\gamemodes\funrussia336.pwn(77675) : фатальная ошибка 100: невозможно прочесть файл: "system/recovered_full_segment_v2"
+
+Компиляция остановлена.
+
+Pawn compiler 3.2.3664	 	 	Copyright (c) 1997-2016, ITB CompuPhase
+
+
+Ошибок:1.
