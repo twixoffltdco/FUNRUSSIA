@@ -181,6 +181,21 @@ public OnMemeSeasonLoad()
 	gMemeEndD = cache_get_field_content_int(0, "end_d", gSQL);
 	gMemeEndH = cache_get_field_content_int(0, "end_h", gSQL);
 	gMemeEndMi = cache_get_field_content_int(0, "end_mi", gSQL);
+	// защита от ??? из БД: если имя битое — всегда MEME_NAME
+	{
+		new qi, qcnt, bad;
+		bad = !gMemeName[0];
+		for(qi = 0; gMemeName[qi] && qi < 31; qi++)
+		{
+			if(gMemeName[qi] == '?') qcnt++;
+		}
+		if(qcnt >= 2) bad = 1;
+		if(bad)
+		{
+			format(gMemeName, sizeof gMemeName, "%s", MEME_NAME);
+			MemeSaveSeasonToDB();
+		}
+	}
 	gMemeSeasonLoaded = true;
 
 	printf("[Euro] Season from DB: %s until %02d.%02d.%04d %02d:%02d",
@@ -240,6 +255,24 @@ stock MemeCheckSeason()
 	return 1;
 }
 
+
+stock MemeFixName()
+{
+	new qi, qcnt, bad;
+	bad = !gMemeName[0];
+	for(qi = 0; gMemeName[qi] && qi < 31; qi++)
+	{
+		if(gMemeName[qi] == '?') qcnt++;
+	}
+	if(qcnt >= 2) bad = 1;
+	if(bad)
+	{
+		format(gMemeName, sizeof gMemeName, "%s", MEME_NAME);
+		if(gSQLOk) MemeSaveSeasonToDB();
+	}
+	return 1;
+}
+
 stock bool:MemeRequireActive(playerid)
 {
 	MemeCheckSeason();
@@ -284,9 +317,19 @@ stock LoadIni()
 stock ConnectSQL()
 {
 	gSQL = mysql_connect(SQL_Host, SQL_User, SQL_DB, SQL_Pass);
-	if(gSQL && mysql_errno(gSQL) == 0) return 1;
+	if(gSQL && mysql_errno(gSQL) == 0)
+	{
+		mysql_tquery(gSQL, "SET NAMES 'cp1251'");
+		mysql_tquery(gSQL, "SET CHARACTER SET cp1251");
+		return 1;
+	}
 	gSQL = mysql_connect(SQL_Host, SQL_User, SQL_Pass, SQL_DB);
-	if(gSQL && mysql_errno(gSQL) == 0) return 1;
+	if(gSQL && mysql_errno(gSQL) == 0)
+	{
+		mysql_tquery(gSQL, "SET NAMES 'cp1251'");
+		mysql_tquery(gSQL, "SET CHARACTER SET cp1251");
+		return 1;
+	}
 	gSQL = 0;
 	return 0;
 }
@@ -457,6 +500,7 @@ forward MemeAnnounce();
 public MemeAnnounce()
 {
 	MemeCheckSeason();
+	MemeFixName();
 	new str[160];
 	if(MemeSeasonActive())
 		format(str, sizeof str, "{FF69B4}[Мемкоин] Сейчас: %s | до %02d.%02d.%04d %02d:%02d | курс %.1f | .meme",
@@ -946,7 +990,9 @@ public OnMemeTop(playerid)
 		strcat(body, line);
 	}
 	if(!body[0]) format(body, sizeof body, "Пусто");
-	ShowPlayerDialog(playerid, D_MEME_TOP, DIALOG_STYLE_MSGBOX, "{FF69B4}Топ Алабуга", body, "OK", "");
+	new mt[56];
+	format(mt, sizeof mt, "{FF69B4}Топ %s", gMemeName);
+	ShowPlayerDialog(playerid, D_MEME_TOP, DIALOG_STYLE_MSGBOX, mt, body, "OK", "");
 	return 1;
 }
 
@@ -1073,23 +1119,22 @@ public PlaytimeTick()
 stock ShowUahMenu(playerid)
 {
 	if(!PlayerLoaded[playerid]) return 1;
-	new body[256], title[64];
-	format(title, sizeof title, "{0057B8}Гривна: %d", PlayerUAH[playerid]);
+	new body[400];
 	format(body, sizeof body,
-		"Купить админку (%d)\nКупить лидерку семьи (%d)\nНазад",
-		UAH_ADMIN_PRICE, UAH_LEADER_PRICE);
-	ShowPlayerDialog(playerid, D_UAH_MENU, DIALOG_STYLE_LIST, title, body, "OK", "X");
+		"Гривна (UAH): %d\nНе обменивается\nКупить админку (%d)\nКупить лидерку семьи (%d)\nНазад",
+		PlayerUAH[playerid], UAH_ADMIN_PRICE, UAH_LEADER_PRICE);
+	ShowPlayerDialog(playerid, D_UAH_MENU, DIALOG_STYLE_LIST, "{0057B8}Гривна", body, "OK", "X");
 	return 1;
 }
 
 stock ShowKztMenu(playerid)
 {
 	if(!PlayerLoaded[playerid]) return 1;
-	new body[320], title[64];
-	format(title, sizeof title, "{00AFCA}Тенге: %d (комиссия 70%%)", PlayerKZT[playerid]);
+	new body[500];
 	format(body, sizeof body,
-		"Тенге -> евро\nТенге -> бит\nЕвро -> тенге\nБит -> тенге\nНазад");
-	ShowPlayerDialog(playerid, D_KZT_MENU, DIALOG_STYLE_LIST, title, body, "OK", "X");
+		"Тенге (KZT): %d\nКомиссия обмена 70%%\nТенге -> евро (70%%)\nТенге -> бит (70%%)\nЕвро -> тенге (70%%)\nБит -> тенге (70%%)\nНазад",
+		PlayerKZT[playerid]);
+	ShowPlayerDialog(playerid, D_KZT_MENU, DIALOG_STYLE_LIST, "{00AFCA}Тенге", body, "OK", "X");
 	return 1;
 }
 
@@ -1182,39 +1227,42 @@ stock ShowMenu(playerid)
 		return 1;
 	}
 	UpdateRate();
-	new body[512], title[128];
-	format(title, sizeof title, "{FFD700}Евро %d | Бит %d | %s %d | курс %.1f",
-		PlayerEuro[playerid], PlayerBit[playerid], gMemeName, PlayerMeme[playerid], gEuroRate);
+	MemeFixName();
+	new body[900];
 	format(body, sizeof body,
-		"Евро -> нал\nЕвро -> банк\nНал -> евро\nБанк -> евро\nЕвро -> бит (20%%)\nПередать евро\nСкин\nАкс\nМашина\nСемья (100000)\nТоп евро\nМеню битка\nМеню мемкоина\nГривна (%d)\nТенге (%d)\nОбновить",
-		PlayerUAH[playerid], PlayerKZT[playerid]);
-	ShowPlayerDialog(playerid, D_EURO_MENU, DIALOG_STYLE_LIST, title, body, "OK", "X");
+		"Евро: %d | Бит: %d | %s: %d\nГривна: %d | Тенге: %d\nКурс евро %.2f | BTC %.0f\nЕвро -> нал\nЕвро -> банк\nНал -> евро\nБанк -> евро\nЕвро -> бит (20%%)\nПередать евро\nСкин\nАкс\nМашина\nСемья\nТоп евро\nМеню битка\nМеню мемкоина\nГривна\nТенге\nОбновить",
+		PlayerEuro[playerid], PlayerBit[playerid], gMemeName, PlayerMeme[playerid],
+		PlayerUAH[playerid], PlayerKZT[playerid], gEuroRate, gBitRate);
+	ShowPlayerDialog(playerid, D_EURO_MENU, DIALOG_STYLE_LIST, "{FFD700}Евро", body, "OK", "X");
 	return 1;
 }
 
 stock ShowBitMenu(playerid)
 {
 	if(!gSQLOk || !PlayerLoaded[playerid]) { LoadEuro(playerid); return SendClientMessage(playerid, COLOR_ERR, "Загрузка..."), 1; }
-	new body[400], title[96];
-	format(title, sizeof title, "{00BFFF}Биток %d | курс %.0f", PlayerBit[playerid], gBitRate);
+	new body[600];
 	format(body, sizeof body,
-		"Бит -> нал (5%%)\nБит -> банк (5%%)\nБит -> евро (5%%)\nПередать бит (20%%)\nТоп битка\nМеню евро\nМеню мемкоина\nОбновить");
-	ShowPlayerDialog(playerid, D_BIT_MENU, DIALOG_STYLE_LIST, title, body, "OK", "X");
+		"Биток: %d\nКурс BTC %.0f\nБит -> нал (5%%)\nБит -> банк (5%%)\nБит -> евро (5%%)\nПередать бит (20%%)\nТоп битка\nEuro\nMeme\nRefresh",
+		PlayerBit[playerid], gBitRate);
+	ShowPlayerDialog(playerid, D_BIT_MENU, DIALOG_STYLE_LIST, "{00BFFF}Биток", body, "OK", "X");
 	return 1;
 }
 
 stock ShowMemeMenu(playerid)
 {
 	if(!gSQLOk || !PlayerLoaded[playerid]) { LoadEuro(playerid); return SendClientMessage(playerid, COLOR_ERR, "Загрузка..."), 1; }
-	new body[512], title[144], status[16];
+	MemeFixName();
+	new body[800], status[16];
 	if(MemeSeasonActive()) format(status, sizeof status, "активен");
 	else format(status, sizeof status, "ОКОНЧЕН");
-	format(title, sizeof title, "{FF69B4}%s %d (%s) до %02d.%02d.%04d | курс %.1f",
-		gMemeName, PlayerMeme[playerid], status, gMemeEndD, gMemeEndMo, gMemeEndY, gMemeRate);
 	format(body, sizeof body,
-		"Мем -> нал\nМем -> банк\nМем -> евро\nМем -> бит\nЕвро -> мем\nБит -> мем\nДонат(БЦ) -> мем\nМем -> донат(БЦ)\nПередать мем (50%%)\nПолёт (10 мем)\nРандом скин/тачка/акс (%d)\nТоп мемкоина\nГривна\nТенге\nМеню евро\nМеню битка\nОбновить",
+		"%s: %d (%s)\nДо %02d.%02d.%04d %02d:%02d | курс %.1f\nМем -> нал\nМем -> банк\nМем -> евро\nМем -> бит\nЕвро -> мем\nБит -> мем\nДонат(БЦ) -> мем\nМем -> донат(БЦ)\nПередать мем (50%%)\nПолёт (10 мем)\nРандом скин/тачка/акс (%d)\nТоп мемкоина\nГривна\nТенге\nЕвро | Биток\nОбновить",
+		gMemeName, PlayerMeme[playerid], status,
+		gMemeEndD, gMemeEndMo, gMemeEndY, gMemeEndH, gMemeEndMi, gMemeRate,
 		MemeRandPrice(playerid));
-	ShowPlayerDialog(playerid, D_MEME_MENU, DIALOG_STYLE_LIST, title, body, "OK", "X");
+	new mt[48];
+	format(mt, sizeof mt, "{FF69B4}%s", gMemeName);
+	ShowPlayerDialog(playerid, D_MEME_MENU, DIALOG_STYLE_LIST, mt, body, "OK", "X");
 	return 1;
 }
 
@@ -1252,6 +1300,8 @@ public OnFilterScriptInit()
 	if(!LoadIni()) { print("[Euro] нет ini"); return 1; }
 	if(!ConnectSQL()) { print("[Euro] MySQL ошибка"); return 1; }
 	gSQLOk = 1;
+	mysql_tquery(gSQL, "SET NAMES 'cp1251'");
+	mysql_tquery(gSQL, "SET CHARACTER SET cp1251");
 	mysql_tquery(gSQL, "ALTER TABLE `accounts` ADD COLUMN `evro` INT NOT NULL DEFAULT 0");
 	mysql_tquery(gSQL, "ALTER TABLE `accounts` ADD COLUMN `evro_exchanged` INT NOT NULL DEFAULT 0");
 	mysql_tquery(gSQL, "ALTER TABLE `accounts` ADD COLUMN `bitok` INT NOT NULL DEFAULT 0");
@@ -1328,22 +1378,23 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		if(!response) return 1;
 		switch(listitem)
 		{
-			case 0: { EuroExMode[playerid] = 0; ShowPlayerDialog(playerid, D_EURO_EX_AMT, DIALOG_STYLE_INPUT, "Евро->нал", "Сколько евро?", "OK", "X"); }
-			case 1: { EuroExMode[playerid] = 1; ShowPlayerDialog(playerid, D_EURO_EX_AMT, DIALOG_STYLE_INPUT, "Евро->банк", "Сколько евро?", "OK", "X"); }
-			case 2: { EuroBuyMode[playerid] = 0; ShowPlayerDialog(playerid, D_EURO_BUY_AMT, DIALOG_STYLE_INPUT, "Нал->евро", "Сколько руб?", "OK", "X"); }
-			case 3: { EuroBuyMode[playerid] = 1; ShowPlayerDialog(playerid, D_EURO_BUY_AMT, DIALOG_STYLE_INPUT, "Банк->евро", "Сколько руб?", "OK", "X"); }
-			case 4: ShowPlayerDialog(playerid, D_E2B_AMT, DIALOG_STYLE_INPUT, "Евро->бит", "Сколько евро?", "OK", "X");
-			case 5: ShowPlayerDialog(playerid, D_EURO_GIVE, DIALOG_STYLE_INPUT, "ID игрока", "ID:", "OK", "X");
-			case 6: ShowPlayerDialog(playerid, D_EURO_SKIN, DIALOG_STYLE_INPUT, "Скин", "ID:", "OK", "X");
-			case 7: ShowPlayerDialog(playerid, D_EURO_ACS, DIALOG_STYLE_INPUT, "Акс", "ID:", "OK", "X");
-			case 8: ShowPlayerDialog(playerid, D_EURO_CAR, DIALOG_STYLE_INPUT, "Машина", "ID:", "OK", "X");
-			case 9: StartFamilyBuy(playerid);
-			case 10: ShowTop(playerid);
-			case 11: ShowBitMenu(playerid);
-			case 12: ShowMemeMenu(playerid);
-			case 13: ShowUahMenu(playerid);
-			case 14: ShowKztMenu(playerid);
-			case 15: { LoadEuro(playerid); ShowMenu(playerid); }
+			case 0, 1, 2: ShowMenu(playerid);
+			case 3: { EuroExMode[playerid] = 0; ShowPlayerDialog(playerid, D_EURO_EX_AMT, DIALOG_STYLE_INPUT, "Евро->нал", "Сколько евро?", "OK", "X"); }
+			case 4: { EuroExMode[playerid] = 1; ShowPlayerDialog(playerid, D_EURO_EX_AMT, DIALOG_STYLE_INPUT, "Евро->банк", "Сколько евро?", "OK", "X"); }
+			case 5: { EuroBuyMode[playerid] = 0; ShowPlayerDialog(playerid, D_EURO_BUY_AMT, DIALOG_STYLE_INPUT, "Нал->евро", "Сколько руб?", "OK", "X"); }
+			case 6: { EuroBuyMode[playerid] = 1; ShowPlayerDialog(playerid, D_EURO_BUY_AMT, DIALOG_STYLE_INPUT, "Банк->евро", "Сколько руб?", "OK", "X"); }
+			case 7: ShowPlayerDialog(playerid, D_E2B_AMT, DIALOG_STYLE_INPUT, "Евро->бит", "Сколько евро?", "OK", "X");
+			case 8: ShowPlayerDialog(playerid, D_EURO_GIVE, DIALOG_STYLE_INPUT, "ID игрока", "ID:", "OK", "X");
+			case 9: ShowPlayerDialog(playerid, D_EURO_SKIN, DIALOG_STYLE_INPUT, "Скин", "ID:", "OK", "X");
+			case 10: ShowPlayerDialog(playerid, D_EURO_ACS, DIALOG_STYLE_INPUT, "Акс", "ID:", "OK", "X");
+			case 11: ShowPlayerDialog(playerid, D_EURO_CAR, DIALOG_STYLE_INPUT, "Машина", "ID:", "OK", "X");
+			case 12: StartFamilyBuy(playerid);
+			case 13: ShowTop(playerid);
+			case 14: ShowBitMenu(playerid);
+			case 15: ShowMemeMenu(playerid);
+			case 16: ShowUahMenu(playerid);
+			case 17: ShowKztMenu(playerid);
+			case 18: LoadEuro(playerid);
 		}
 		return 1;
 	}
@@ -1352,14 +1403,15 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		if(!response) return 1;
 		switch(listitem)
 		{
-			case 0: { BitExMode[playerid] = 0; ShowPlayerDialog(playerid, D_BIT_EX_AMT, DIALOG_STYLE_INPUT, "Бит->нал", "Сколько?", "OK", "X"); }
-			case 1: { BitExMode[playerid] = 1; ShowPlayerDialog(playerid, D_BIT_EX_AMT, DIALOG_STYLE_INPUT, "Бит->банк", "Сколько?", "OK", "X"); }
-			case 2: ShowPlayerDialog(playerid, D_B2E_AMT, DIALOG_STYLE_INPUT, "Бит->евро", "Сколько?", "OK", "X");
-			case 3: ShowPlayerDialog(playerid, D_BIT_GIVE, DIALOG_STYLE_INPUT, "ID", "ID игрока:", "OK", "X");
-			case 4: ShowBitTop(playerid);
-			case 5: ShowMenu(playerid);
-			case 6: ShowMemeMenu(playerid);
-			case 7: { LoadEuro(playerid); ShowBitMenu(playerid); }
+			case 0, 1: ShowBitMenu(playerid);
+			case 2: { BitExMode[playerid] = 0; ShowPlayerDialog(playerid, D_BIT_EX_AMT, DIALOG_STYLE_INPUT, "Бит->нал", "Сколько?", "OK", "X"); }
+			case 3: { BitExMode[playerid] = 1; ShowPlayerDialog(playerid, D_BIT_EX_AMT, DIALOG_STYLE_INPUT, "Бит->банк", "Сколько?", "OK", "X"); }
+			case 4: ShowPlayerDialog(playerid, D_B2E_AMT, DIALOG_STYLE_INPUT, "Бит->евро", "Сколько?", "OK", "X");
+			case 5: ShowPlayerDialog(playerid, D_BIT_GIVE, DIALOG_STYLE_INPUT, "ID", "ID игрока:", "OK", "X");
+			case 6: ShowBitTop(playerid);
+			case 7: ShowMenu(playerid);
+			case 8: ShowMemeMenu(playerid);
+			case 9: LoadEuro(playerid);
 		}
 		return 1;
 	}
@@ -1368,23 +1420,23 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		if(!response) return 1;
 		switch(listitem)
 		{
-			case 0: { MemeExMode[playerid] = 0; ShowPlayerDialog(playerid, D_MEME_EX_AMT, DIALOG_STYLE_INPUT, "Мем->нал", "Сколько?", "OK", "X"); }
-			case 1: { MemeExMode[playerid] = 1; ShowPlayerDialog(playerid, D_MEME_EX_AMT, DIALOG_STYLE_INPUT, "Мем->банк", "Сколько?", "OK", "X"); }
-			case 2: { MemeExMode[playerid] = 2; ShowPlayerDialog(playerid, D_MEME_EX_AMT, DIALOG_STYLE_INPUT, "Мем->евро", "Сколько?", "OK", "X"); }
-			case 3: { MemeExMode[playerid] = 3; ShowPlayerDialog(playerid, D_MEME_EX_AMT, DIALOG_STYLE_INPUT, "Мем->бит", "Сколько?", "OK", "X"); }
-			case 4: ShowPlayerDialog(playerid, D_MEME_FROM_EUR, DIALOG_STYLE_INPUT, "Евро->мем", "Сколько евро?", "OK", "X");
-			case 5: ShowPlayerDialog(playerid, D_MEME_FROM_BIT, DIALOG_STYLE_INPUT, "Бит->мем", "Сколько бит?", "OK", "X");
-			case 6: ShowPlayerDialog(playerid, D_MEME_DONATE, DIALOG_STYLE_INPUT, "Донат->мем", "Сколько БЦ?", "OK", "X");
-			case 7: { MemeExMode[playerid] = 4; ShowPlayerDialog(playerid, D_MEME_EX_AMT, DIALOG_STYLE_INPUT, "Мем->донат", "Сколько?", "OK", "X"); }
-			case 8: ShowPlayerDialog(playerid, D_MEME_GIVE, DIALOG_STYLE_INPUT, "ID игрока", "ID:", "OK", "X");
-			case 9: MemeBuyFly(playerid);
-			case 10: MemeBuyRandom(playerid);
-			case 11: ShowMemeTop(playerid);
-			case 12: ShowUahMenu(playerid);
-			case 13: ShowKztMenu(playerid);
-			case 14: ShowMenu(playerid);
-			case 15: ShowBitMenu(playerid);
-			case 16: { LoadEuro(playerid); ShowMemeMenu(playerid); }
+			case 0, 1: ShowMemeMenu(playerid);
+			case 2: { MemeExMode[playerid] = 0; ShowPlayerDialog(playerid, D_MEME_EX_AMT, DIALOG_STYLE_INPUT, "Мем->нал", "Сколько?", "OK", "X"); }
+			case 3: { MemeExMode[playerid] = 1; ShowPlayerDialog(playerid, D_MEME_EX_AMT, DIALOG_STYLE_INPUT, "Мем->банк", "Сколько?", "OK", "X"); }
+			case 4: { MemeExMode[playerid] = 2; ShowPlayerDialog(playerid, D_MEME_EX_AMT, DIALOG_STYLE_INPUT, "Мем->евро", "Сколько?", "OK", "X"); }
+			case 5: { MemeExMode[playerid] = 3; ShowPlayerDialog(playerid, D_MEME_EX_AMT, DIALOG_STYLE_INPUT, "Мем->бит", "Сколько?", "OK", "X"); }
+			case 6: ShowPlayerDialog(playerid, D_MEME_FROM_EUR, DIALOG_STYLE_INPUT, "Евро->мем", "Сколько евро?", "OK", "X");
+			case 7: ShowPlayerDialog(playerid, D_MEME_FROM_BIT, DIALOG_STYLE_INPUT, "Бит->мем", "Сколько бит?", "OK", "X");
+			case 8: ShowPlayerDialog(playerid, D_MEME_DONATE, DIALOG_STYLE_INPUT, "Донат->мем", "Сколько БЦ?", "OK", "X");
+			case 9: { MemeExMode[playerid] = 4; ShowPlayerDialog(playerid, D_MEME_EX_AMT, DIALOG_STYLE_INPUT, "Мем->донат", "Сколько?", "OK", "X"); }
+			case 10: ShowPlayerDialog(playerid, D_MEME_GIVE, DIALOG_STYLE_INPUT, "ID игрока", "ID:", "OK", "X");
+			case 11: MemeBuyFly(playerid);
+			case 12: MemeBuyRandom(playerid);
+			case 13: ShowMemeTop(playerid);
+			case 14: ShowUahMenu(playerid);
+			case 15: ShowKztMenu(playerid);
+			case 16: ShowMenu(playerid);
+			case 17: LoadEuro(playerid);
 		}
 		return 1;
 	}
@@ -1509,9 +1561,10 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		if(!response) return 1;
 		switch(listitem)
 		{
-			case 0: UahBuyAdmin(playerid);
-			case 1: UahBuyLeader(playerid);
-			case 2: ShowMenu(playerid);
+			case 0, 1: ShowUahMenu(playerid);
+			case 2: UahBuyAdmin(playerid);
+			case 3: UahBuyLeader(playerid);
+			case 4: ShowMenu(playerid);
 		}
 		return 1;
 	}
@@ -1520,11 +1573,12 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		if(!response) return 1;
 		switch(listitem)
 		{
-			case 0: { KztExMode[playerid]=0; ShowPlayerDialog(playerid, D_KZT_EX_AMT, DIALOG_STYLE_INPUT, "Тенге->евро", "Сколько тенге?", "OK", "X"); }
-			case 1: { KztExMode[playerid]=1; ShowPlayerDialog(playerid, D_KZT_EX_AMT, DIALOG_STYLE_INPUT, "Тенге->бит", "Сколько тенге?", "OK", "X"); }
-			case 2: { KztExMode[playerid]=2; ShowPlayerDialog(playerid, D_KZT_EX_AMT, DIALOG_STYLE_INPUT, "Евро->тенге", "Сколько евро?", "OK", "X"); }
-			case 3: { KztExMode[playerid]=3; ShowPlayerDialog(playerid, D_KZT_EX_AMT, DIALOG_STYLE_INPUT, "Бит->тенге", "Сколько бит?", "OK", "X"); }
-			case 4: ShowMenu(playerid);
+			case 0, 1: ShowKztMenu(playerid);
+			case 2: { KztExMode[playerid]=0; ShowPlayerDialog(playerid, D_KZT_EX_AMT, DIALOG_STYLE_INPUT, "Тенге->евро", "Сколько тенге?", "OK", "X"); }
+			case 3: { KztExMode[playerid]=1; ShowPlayerDialog(playerid, D_KZT_EX_AMT, DIALOG_STYLE_INPUT, "Тенге->бит", "Сколько тенге?", "OK", "X"); }
+			case 4: { KztExMode[playerid]=2; ShowPlayerDialog(playerid, D_KZT_EX_AMT, DIALOG_STYLE_INPUT, "Евро->тенге", "Сколько евро?", "OK", "X"); }
+			case 5: { KztExMode[playerid]=3; ShowPlayerDialog(playerid, D_KZT_EX_AMT, DIALOG_STYLE_INPUT, "Бит->тенге", "Сколько бит?", "OK", "X"); }
+			case 6: ShowMenu(playerid);
 		}
 		return 1;
 	}
