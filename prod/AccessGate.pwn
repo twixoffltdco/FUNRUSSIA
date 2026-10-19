@@ -12,6 +12,9 @@
 #define MYSQL_FILE         "bykranin_mysql_settings.ini"
 #define AG_DAYS            30
 #define AG_DLG             41710
+#define AG_DLG_TRIAL        41711
+#define AG_DLG_TRIAL_OFFER  41712
+#define AG_TRIAL_SEC        (5 * 3600)
 #define AG_DELAY           10000
 #define AG_MAX_TRIES       5
 
@@ -21,6 +24,14 @@ new AG_Host[64], AG_User[64], AG_Pass[64], AG_DB[64];
 
 new AG_Acc[MAX_PLAYERS];
 new bool:AG_Ok[MAX_PLAYERS];
+new bool:AG_Trial[MAX_PLAYERS];
+new AG_TrialEnd[MAX_PLAYERS];
+new AG_TrialJoinAt[MAX_PLAYERS];
+new bool:AG_TrialOfferShown[MAX_PLAYERS];
+new Float:AG_Tx[MAX_PLAYERS], Float:AG_Ty[MAX_PLAYERS], Float:AG_Tz[MAX_PLAYERS];
+new bool:AG_TPos[MAX_PLAYERS];
+new AG_TrialVeh[MAX_PLAYERS];
+new AG_TrialCarWait[MAX_PLAYERS]; // gettime until allow vw0 for cars
 new bool:AG_Need[MAX_PLAYERS];
 new AG_Tries[MAX_PLAYERS];
 new bool:AG_DlgOpen[MAX_PLAYERS];
@@ -123,10 +134,10 @@ stock AG_LoadIni()
 stock AG_ConnectSQL()
 {
 	// как EuroSystem: два порядка аргументов
-	AG_SQL = mysql_connect(AG_Host, AG_User, AG_DB, AG_Pass);
-	if(AG_SQL && mysql_errno(AG_SQL) == 0) return 1;
-	AG_SQL = mysql_connect(AG_Host, AG_User, AG_Pass, AG_DB);
-	if(AG_SQL && mysql_errno(AG_SQL) == 0) return 1;
+	AG_SQL = MySQL:mysql_connect(AG_Host, AG_User, AG_DB, AG_Pass);
+	if(_:AG_SQL && mysql_errno(AG_SQL) == 0) return 1;
+	AG_SQL = MySQL:mysql_connect(AG_Host, AG_User, AG_Pass, AG_DB);
+	if(_:AG_SQL && mysql_errno(AG_SQL) == 0) return 1;
 	printf("[AccessGate] MySQL FAIL errno=%d", mysql_errno(AG_SQL));
 	return 0;
 }
@@ -150,10 +161,12 @@ public OnFilterScriptInit()
 		mysql_tquery(AG_SQL, "ALTER TABLE `accounts` ADD COLUMN `access_until_y` INT NOT NULL DEFAULT 0");
 		mysql_tquery(AG_SQL, "ALTER TABLE `accounts` ADD COLUMN `access_until_m` INT NOT NULL DEFAULT 0");
 		mysql_tquery(AG_SQL, "ALTER TABLE `accounts` ADD COLUMN `access_until_d` INT NOT NULL DEFAULT 0");
+		mysql_tquery(AG_SQL, "ALTER TABLE `accounts` ADD COLUMN `fun_trial_end` INT NOT NULL DEFAULT 0");
+		mysql_tquery(AG_SQL, "ALTER TABLE `accounts` ADD COLUMN `fun_trial_used` TINYINT NOT NULL DEFAULT 0");
 		print("[AccessGate] MySQL OK");
 	}
 	else print("[AccessGate] MySQL не подключен");
-	SetTimer("AG_Pulse", 5000, true);
+	SetTimer("AG_Pulse", 1000, true);
 	print("[AccessGate] v6 ready");
 	return 1;
 }
@@ -168,6 +181,13 @@ public OnPlayerConnect(playerid)
 {
 	AG_Acc[playerid] = 0;
 	AG_Ok[playerid] = false;
+	AG_Trial[playerid] = false;
+	AG_TrialEnd[playerid] = 0;
+	AG_TrialJoinAt[playerid] = 0;
+	AG_TrialOfferShown[playerid] = false;
+	AG_TPos[playerid] = false;
+	AG_TrialVeh[playerid] = 0;
+	AG_TrialCarWait[playerid] = 0;
 	AG_Need[playerid] = false;
 	AG_Tries[playerid] = 0;
 	AG_DlgOpen[playerid] = false;
@@ -180,6 +200,333 @@ public OnPlayerConnect(playerid)
 	printf("[AccessGate] connect %s", AG_Nick[playerid]);
 	return 1;
 }
+
+public OnPlayerText(playerid, text[])
+{
+	if(AG_Trial[playerid] && AG_TrialEnd[playerid] > gettime())
+	{
+		SendClientMessage(playerid, 0xFF4444FF, "[Триал] Чат выключен. Только /cars /donate /inv /reward");
+		return 0;
+	}
+	return 1;
+}
+
+
+public OnPlayerCommandText(playerid, cmdtext[])
+{
+	if(!AG_Trial[playerid] || AG_TrialEnd[playerid] <= gettime()) return 0;
+	new cmd[64];
+	format(cmd, sizeof cmd, "%s", cmdtext);
+	for(new i; cmd[i]; i++) if(cmd[i] >= 'A' && cmd[i] <= 'Z') cmd[i] += 32;
+
+	if(AG_CmdAllow(cmd, "/cars") || AG_CmdAllow(cmd, "/donate") || AG_CmdAllow(cmd, "/inv") || AG_CmdAllow(cmd, "/reward"))
+	{
+		if(AG_CmdAllow(cmd, "/cars"))
+			SetTimerEx("AG_TrialCatchVeh", 1000, false, "i", playerid);
+		return 0;
+	}
+
+	SendClientMessage(playerid, 0xFF4444FF, "[Триал] Запрещено. Только /cars /donate /inv /reward");
+	return 1;
+}
+
+// pawncmd plugin (BlackRush часто через него)
+public OnPlayerCommandReceived(playerid, cmd[])
+{
+	if(!AG_Trial[playerid] || AG_TrialEnd[playerid] <= gettime()) return 1;
+	new c[64];
+	format(c, sizeof c, "%s", cmd);
+	for(new i; c[i]; i++) if(c[i] >= 'A' && c[i] <= 'Z') c[i] += 32;
+	// pawncmd без слэша
+	if(AG_CmdAllow(c, "cars") || AG_CmdAllow(c, "donate") || AG_CmdAllow(c, "inv") || AG_CmdAllow(c, "reward")
+		|| AG_CmdAllow(c, "/cars") || AG_CmdAllow(c, "/donate") || AG_CmdAllow(c, "/inv") || AG_CmdAllow(c, "/reward"))
+	{
+		if(AG_CmdAllow(c, "cars") || AG_CmdAllow(c, "/cars"))
+			SetTimerEx("AG_TrialCatchVeh", 800, false, "i", playerid);
+		return 1;
+	}
+	SendClientMessage(playerid, 0xFF4444FF, "[Триал] Команда заблокирована.");
+	return 0; // pawncmd: 0 = block
+}
+
+public OnPlayerCommandPerformed(playerid, cmd[], success)
+{
+	#pragma unused cmd, success
+	if(AG_Trial[playerid] && AG_TrialEnd[playerid] > gettime())
+		AG_TrialLock(playerid);
+	return 1;
+}
+
+stock bool:AG_CmdAllow(cmd[], name[])
+{
+	new len = strlen(name);
+	if(strfind(cmd, name, true) != 0) return false;
+	new ch = cmd[len];
+	return (ch == 0 || ch == ' ');
+}
+
+stock AG_TrialLock(playerid)
+{
+	if(!IsPlayerConnected(playerid)) return 0;
+	if(!AG_Trial[playerid] || AG_TrialEnd[playerid] <= gettime()) return 0;
+
+	new vw = 50000 + playerid;
+	// окно для /cars — не тянуть обратно в VW 4 сек
+	if(AG_TrialCarWait[playerid] > gettime())
+	{
+		if(IsPlayerInAnyVehicle(playerid))
+		{
+			new vid = GetPlayerVehicleID(playerid);
+			if(vid > 0) AG_TrialVeh[playerid] = vid;
+		}
+		return 1;
+	}
+	new bool:bad_vw = (GetPlayerVirtualWorld(playerid) != vw);
+	if(bad_vw)
+		SetPlayerVirtualWorld(playerid, vw);
+
+	// аренда/парковка спавнит в мире 0 — тянем пустые тачки рядом в VW триала
+	{
+		new Float:px, Float:py, Float:pz;
+		GetPlayerPos(playerid, px, py, pz);
+		new interior = GetPlayerInterior(playerid);
+		for(new v = 1; v < MAX_VEHICLES; v++)
+		{
+			if(GetVehicleModel(v) < 400) continue;
+			new Float:vx, Float:vy, Float:vz;
+			GetVehiclePos(v, vx, vy, vz);
+			new Float:dx = vx - px, Float:dy = vy - py, Float:dz = vz - pz;
+			if((dx*dx + dy*dy + dz*dz) > 225.0) continue; // >15м
+			// занята другим игроком?
+			new bool:busy = false;
+			for(new p; p < MAX_PLAYERS; p++)
+			{
+				if(p == playerid || !IsPlayerConnected(p)) continue;
+				if(IsPlayerInVehicle(p, v)) { busy = true; break; }
+			}
+			if(busy) continue;
+			if(GetVehicleVirtualWorld(v) != vw)
+			{
+				SetVehicleVirtualWorld(v, vw);
+				LinkVehicleToInterior(v, interior);
+			}
+		}
+	}
+
+	// машина только триал-игрока в его VW
+	if(IsPlayerInAnyVehicle(playerid))
+	{
+		new vid = GetPlayerVehicleID(playerid);
+		if(vid > 0)
+		{
+			AG_TrialVeh[playerid] = vid;
+			if(GetVehicleVirtualWorld(vid) != vw)
+				SetVehicleVirtualWorld(vid, vw);
+		}
+	}
+	else if(AG_TrialVeh[playerid] > 0)
+	{
+		new vid = AG_TrialVeh[playerid];
+		if(GetVehicleModel(vid) > 0 && GetVehicleVirtualWorld(vid) != vw)
+			SetVehicleVirtualWorld(vid, vw);
+	}
+
+	// анти-ТП: админ /gethere или /tp игрока к себе
+	if(AG_TPos[playerid])
+	{
+		new Float:x, Float:y, Float:z;
+		GetPlayerPos(playerid, x, y, z);
+		new Float:dx = x - AG_Tx[playerid], Float:dy = y - AG_Ty[playerid], Float:dz = z - AG_Tz[playerid];
+		new Float:dist2 = dx*dx + dy*dy + dz*dz;
+		// >15м за тик или сменили VW = насильственный ТП
+		if(bad_vw || dist2 > 225.0)
+		{
+			SetPlayerPos(playerid, AG_Tx[playerid], AG_Ty[playerid], AG_Tz[playerid]);
+			SetPlayerVirtualWorld(playerid, vw);
+			if(IsPlayerInAnyVehicle(playerid))
+			{
+				new vid = GetPlayerVehicleID(playerid);
+				if(vid > 0)
+				{
+					SetVehiclePos(vid, AG_Tx[playerid], AG_Ty[playerid], AG_Tz[playerid]);
+					SetVehicleVirtualWorld(vid, vw);
+				}
+			}
+			SendClientMessage(playerid, 0xFF4444FF, "[Триал] Телепорт админа сброшен. Ты в своём мире.");
+		}
+		else
+		{
+			// только обычное движение — обновляем точку
+			AG_Tx[playerid] = x;
+			AG_Ty[playerid] = y;
+			AG_Tz[playerid] = z;
+		}
+	}
+	else
+	{
+		GetPlayerPos(playerid, AG_Tx[playerid], AG_Ty[playerid], AG_Tz[playerid]);
+		AG_TPos[playerid] = true;
+	}
+	return 1;
+}
+
+// выкинуть админов/игроков из VW триала
+stock AG_KickFromTrialWorlds(playerid)
+{
+	if(!IsPlayerConnected(playerid)) return 0;
+	if(AG_Trial[playerid] && AG_TrialEnd[playerid] > gettime()) return 0;
+	new vw = GetPlayerVirtualWorld(playerid);
+	if(vw >= 50000 && vw < 50000 + MAX_PLAYERS)
+	{
+		SetPlayerVirtualWorld(playerid, 0);
+		SendClientMessage(playerid, 0xFF4444FF, "Нельзя в мир триал-игрока (ТП к триалу запрещён).");
+		return 1;
+	}
+	return 0;
+}
+
+public OnPlayerWeaponShot(playerid, weaponid, hittype, hitid, Float:fX, Float:fY, Float:fZ)
+{
+	#pragma unused weaponid, hittype, hitid, fX, fY, fZ
+	if(AG_Trial[playerid]) return 0; // нельзя стрелять по игрокам
+	return 1;
+}
+
+public OnPlayerTakeDamage(playerid, issuerid, Float:amount, weaponid, bodypart)
+{
+	#pragma unused amount, weaponid, bodypart
+	if(AG_Trial[playerid]) return 0;
+	if(issuerid != INVALID_PLAYER_ID && AG_Trial[issuerid]) return 0;
+	return 1;
+}
+
+public OnPlayerDeath(playerid, killerid, reason)
+{
+	#pragma unused killerid, reason
+	if(AG_Trial[playerid])
+		SetTimerEx("AG_TrialFixVW", 1000, false, "i", playerid);
+	return 1;
+}
+
+public OnPlayerStateChange(playerid, newstate, oldstate)
+{
+	#pragma unused oldstate
+	if(!AG_Trial[playerid] || AG_TrialEnd[playerid] <= gettime()) return 1;
+	if(newstate == PLAYER_STATE_DRIVER || newstate == PLAYER_STATE_PASSENGER)
+	{
+		new vid = GetPlayerVehicleID(playerid);
+		if(vid > 0)
+		{
+			AG_TrialVeh[playerid] = vid;
+			SetVehicleVirtualWorld(vid, 50000 + playerid);
+			SetPlayerVirtualWorld(playerid, 50000 + playerid);
+			LinkVehicleToInterior(vid, GetPlayerInterior(playerid));
+		}
+	}
+	return 1;
+}
+
+public OnPlayerUpdate(playerid)
+{
+	static upd[MAX_PLAYERS];
+	if(AG_Trial[playerid] && AG_TrialEnd[playerid] > gettime())
+	{
+		upd[playerid]++;
+		if(upd[playerid] >= 15) // ~2 раза в секунду
+		{
+			upd[playerid] = 0;
+			AG_TrialLock(playerid);
+		}
+	}
+	return 1;
+}
+
+
+forward AG_TrialCatchVeh(playerid);
+public AG_TrialCatchVeh(playerid)
+{
+	// шаг 1: на 4 сек в мир 0, чтобы /cars заспавнил тачку и игрок сел
+	if(!IsPlayerConnected(playerid)) return 1;
+	if(!AG_Trial[playerid] || AG_TrialEnd[playerid] <= gettime()) return 1;
+
+	AG_TrialCarWait[playerid] = gettime() + 5;
+	SetPlayerVirtualWorld(playerid, 0);
+	SendClientMessage(playerid, 0x7CFC00FF, "[Триал] Выбери/сядь в тачку за 4 сек — потом вернём в твой мир.");
+	SetTimerEx("AG_TrialCatchVeh2", 4000, false, "i", playerid);
+	return 1;
+}
+
+forward AG_TrialCatchVeh2(playerid);
+public AG_TrialCatchVeh2(playerid)
+{
+	if(!IsPlayerConnected(playerid)) return 1;
+	if(!AG_Trial[playerid] || AG_TrialEnd[playerid] <= gettime()) return 1;
+
+	new vw = 50000 + playerid;
+	new vid = 0;
+
+	if(IsPlayerInAnyVehicle(playerid))
+		vid = GetPlayerVehicleID(playerid);
+
+	if(vid <= 0)
+	{
+		// ищем ближайшую тачку (координаты видны из любого VW)
+		new Float:px, Float:py, Float:pz;
+		GetPlayerPos(playerid, px, py, pz);
+		new Float:best_d = 40.0;
+		for(new v = 1; v < MAX_VEHICLES; v++)
+		{
+			if(GetVehicleModel(v) < 400) continue;
+			new Float:vx, Float:vy, Float:vz;
+			GetVehiclePos(v, vx, vy, vz);
+			new Float:dx = vx - px, Float:dy = vy - py, Float:dz = vz - pz;
+			new Float:d = floatsqroot(dx * dx + dy * dy + dz * dz);
+			if(d < best_d)
+			{
+				best_d = d;
+				vid = v;
+			}
+		}
+	}
+
+	if(vid > 0)
+	{
+		SetVehicleVirtualWorld(vid, vw);
+		LinkVehicleToInterior(vid, GetPlayerInterior(playerid));
+		AG_TrialVeh[playerid] = vid;
+		SetPlayerVirtualWorld(playerid, vw);
+		if(!IsPlayerInAnyVehicle(playerid))
+			PutPlayerInVehicle(playerid, vid, 0);
+		else
+			SetPlayerVirtualWorld(playerid, vw);
+		GetPlayerPos(playerid, AG_Tx[playerid], AG_Ty[playerid], AG_Tz[playerid]);
+		AG_TPos[playerid] = true;
+		SendClientMessage(playerid, 0x7CFC00FF, "[Триал] Тачка в твоём мире. Катайся.");
+		printf("[AccessGate] trial car ok veh=%d vw=%d %s", vid, vw, AG_Nick[playerid]);
+	}
+	else
+	{
+		SetPlayerVirtualWorld(playerid, vw);
+		SendClientMessage(playerid, 0xFFAA00FF, "[Триал] Тачка не найдена. Напиши /cars ещё раз и сядь в неё быстрее.");
+	}
+	return 1;
+}
+
+forward AG_TrialFixVW(playerid);
+public AG_TrialFixVW(playerid)
+{
+	if(!IsPlayerConnected(playerid)) return 1;
+	if(AG_Trial[playerid] && AG_TrialEnd[playerid] > gettime())
+	{
+		SetPlayerVirtualWorld(playerid, 50000 + playerid);
+		ResetPlayerWeapons(playerid);
+		GetPlayerPos(playerid, AG_Tx[playerid], AG_Ty[playerid], AG_Tz[playerid]);
+		AG_TPos[playerid] = true;
+		AG_TrialLock(playerid);
+	}
+	return 1;
+}
+
 
 public OnPlayerDisconnect(playerid, reason)
 {
@@ -194,7 +541,10 @@ forward AG_Load(playerid);
 public AG_Load(playerid)
 {
 	AG_Tmr[playerid] = 0;
-	if(!IsPlayerConnected(playerid) || AG_Ok[playerid]) return 1;
+	if(!IsPlayerConnected(playerid)) return 1;
+	// уже в триале или с доступом — не трогать
+	if(AG_Ok[playerid]) return 1;
+	if(AG_Trial[playerid] && AG_TrialEnd[playerid] > gettime()) return 1;
 	if(!AG_SQLOk)
 	{
 		print("[AccessGate] нет SQL при проверке");
@@ -204,7 +554,7 @@ public AG_Load(playerid)
 	}
 	new q[280];
 	mysql_format(AG_SQL, q, sizeof q,
-		"SELECT `id`, `access_ok`, `access_code`, `access_until_y`, `access_until_m`, `access_until_d` FROM `accounts` WHERE `name`='%e' LIMIT 1",
+		"SELECT `id`, `access_ok`, `access_code`, `access_until_y`, `access_until_m`, `access_until_d`, IFNULL(`fun_trial_end`,0), IFNULL(`fun_trial_used`,0) FROM `accounts` WHERE `name`='%e' LIMIT 1",
 		AG_Nick[playerid]);
 	mysql_tquery(AG_SQL, q, "AG_OnLoad", "i", playerid);
 	return 1;
@@ -214,6 +564,7 @@ forward AG_OnLoad(playerid);
 public AG_OnLoad(playerid)
 {
 	if(!IsPlayerConnected(playerid)) return 1;
+	if(AG_Ok[playerid] && (!AG_Trial[playerid] || AG_TrialEnd[playerid] > gettime())) return 1;
 	new rows = cache_get_row_count(AG_SQL);
 	printf("[AccessGate] load %s rows=%d", AG_Nick[playerid], rows);
 	if(rows < 1)
@@ -254,6 +605,64 @@ public AG_OnLoad(playerid)
 		return 1;
 	}
 
+	// --- Триал 5 часов для новичков ---
+	new trial_end = cache_get_row_int(0, 6, AG_SQL);
+	new trial_used = cache_get_row_int(0, 7, AG_SQL);
+	new nowt = gettime();
+
+	// активный триал
+	if(trial_end > nowt)
+	{
+		AG_Ok[playerid] = true;
+		AG_Need[playerid] = false;
+		AG_Trial[playerid] = true;
+		AG_TrialEnd[playerid] = trial_end;
+		AG_TrialJoinAt[playerid] = gettime();
+		AG_TrialOfferShown[playerid] = false;
+		AG_DlgOpen[playerid] = false;
+		AG_Need[playerid] = false;
+		TogglePlayerControllable(playerid, 1);
+		SetPlayerVirtualWorld(playerid, 50000 + playerid);
+		AG_TPos[playerid] = false;
+		SetTimerEx("AG_TrialFixVW", 2000, false, "i", playerid);
+		new left = trial_end - nowt;
+		new h = left / 3600, m = (left % 3600) / 60;
+		new str[140];
+		format(str, sizeof str, "[Триал] Бесплатный осмотр: ~%d ч %d мин. Свой мир, без полного доступа. Потом купи код.", h, m);
+		SendClientMessage(playerid, 0x7CFC00FF, str);
+		printf("[AccessGate] TRIAL %s left=%ds", AG_Nick[playerid], left);
+		return 1;
+	}
+
+	// триал ещё не выдавался - выдать 5 часов
+	if(trial_used == 0)
+	{
+		trial_end = nowt + AG_TRIAL_SEC;
+		AG_Ok[playerid] = true;
+		AG_Need[playerid] = false;
+		AG_Trial[playerid] = true;
+		AG_TrialEnd[playerid] = trial_end;
+		AG_TrialJoinAt[playerid] = gettime();
+		AG_TrialOfferShown[playerid] = false;
+		AG_DlgOpen[playerid] = false;
+		AG_Need[playerid] = false;
+		TogglePlayerControllable(playerid, 1);
+		SetPlayerVirtualWorld(playerid, 50000 + playerid);
+		AG_TPos[playerid] = false;
+		SetTimerEx("AG_TrialFixVW", 2000, false, "i", playerid);
+		new q2[200];
+		mysql_format(AG_SQL, q2, sizeof q2,
+			"UPDATE `accounts` SET `fun_trial_end`=%d, `fun_trial_used`=1 WHERE `id`=%d LIMIT 1",
+			trial_end, AG_Acc[playerid]);
+		mysql_tquery(AG_SQL, q2);
+		SendClientMessage(playerid, 0x7CFC00FF, "[Триал] Тебе выдали 5 часов бесплатно. Осмотри сервер. Чат/полный онлайн - после покупки доступа.");
+		ShowPlayerDialog(playerid, AG_DLG_TRIAL, DIALOG_STYLE_MSGBOX, "Триал Fun Russia",
+			"Бесплатный триал: 5 часов.\n\nСвой виртуальный мир.\nМожно бегать и смотреть локации.\n\nКогда закончится - купи спецкод\nили попроси у друга.\n\nДоступ: Max / сайт Fun Russia.",
+			"OK", "");
+		printf("[AccessGate] === TRIAL START === nick=%s acc=%d until=%d (5h)", AG_Nick[playerid], AG_Acc[playerid], trial_end);
+		return 1;
+	}
+
 	if(AG_Code[playerid][0] == '\0')
 	{
 		AG_Gen(AG_Code[playerid]);
@@ -273,13 +682,14 @@ public AG_OnLoad(playerid)
 stock AG_ShowKey(playerid)
 {
 	if(!IsPlayerConnected(playerid) || AG_Ok[playerid]) return 0;
-	if(AG_DlgOpen[playerid]) return 1; // уже открыт — не сбрасывать ввод
+	if(AG_Trial[playerid] && AG_TrialEnd[playerid] > gettime()) return 0;
+	if(AG_DlgOpen[playerid]) return 1; // уже открыт - не сбрасывать ввод
 	AG_Need[playerid] = true;
 	AG_DlgOpen[playerid] = true;
 	TogglePlayerControllable(playerid, 0);
 	SendClientMessage(playerid, 0xFFD700FF, "=== ПЛАТНЫЙ ДОСТУП | 30 дней ===");
 	SendClientMessage(playerid, 0xFFFFFFFF, "Сервер платный. Введи спецкод.");
-	SendClientMessage(playerid, 0xFFD700FF, "750 руб | для друзей — бесплатно");
+	SendClientMessage(playerid, 0xFFD700FF, "750 руб | для друзей - бесплатно");
 	SendClientMessage(playerid, 0x00BFFFFF, "Получить код: fillshow.t.me");
 	SendClientMessage(playerid, 0xFFFFFFFF, "Ключ действует 30 дней, потом новый.");
 	new body[320];
@@ -291,6 +701,12 @@ stock AG_ShowKey(playerid)
 
 public OnPlayerSpawn(playerid)
 {
+	if(AG_Trial[playerid] && AG_TrialEnd[playerid] > gettime())
+	{
+		SetPlayerVirtualWorld(playerid, 50000 + playerid);
+		ResetPlayerWeapons(playerid);
+		return 1;
+	}
 	if(AG_Ok[playerid]) return 1;
 	if(AG_Need[playerid])
 	{
@@ -304,11 +720,47 @@ public OnPlayerSpawn(playerid)
 forward AG_Pulse();
 public AG_Pulse()
 {
+	new nowt = gettime();
 	for(new i; i < MAX_PLAYERS; i++)
 	{
-		if(!IsPlayerConnected(i) || AG_Ok[i] || !AG_Need[i]) continue;
+		if(!IsPlayerConnected(i)) continue;
+
+		// админ/игрок не должен быть в VW триала
+		AG_KickFromTrialWorlds(i);
+
+		// конец триала
+		if(AG_Trial[i] && AG_TrialEnd[i] > 0 && AG_TrialEnd[i] <= nowt)
+		{
+			AG_Trial[i] = false;
+			AG_Ok[i] = false;
+			AG_Need[i] = true;
+			AG_TrialEnd[i] = 0;
+			TogglePlayerControllable(i, 0);
+			SetPlayerVirtualWorld(i, 0);
+			ShowPlayerDialog(i, AG_DLG_TRIAL, DIALOG_STYLE_MSGBOX, "Триал закончился",
+				"Бесплатные 5 часов вышли.\n\nКупи спецкод или попроси у друга.\nМожно ввести код сейчас или выйти.\n\nДоступ: Max / Fun Russia.",
+				"Ввести код", "Выйти");
+			printf("[AccessGate] TRIAL END %s", AG_Nick[i]);
+			continue;
+		}
+
+				if(AG_Trial[i] && AG_TrialEnd[i] > nowt)
+		{
+			// Через 15 минут онлайн предлагаем ввести спецкод досрочно.
+			if(!AG_TrialOfferShown[i] && AG_TrialJoinAt[i] > 0 && nowt - AG_TrialJoinAt[i] >= 900 && !AG_DlgOpen[i])
+			{
+				AG_TrialOfferShown[i] = true;
+				AG_DlgOpen[i] = true;
+				ShowPlayerDialog(i, AG_DLG_TRIAL_OFFER, DIALOG_STYLE_MSGBOX,
+					"Fun Russia — понравился сервер?",
+					"Ты уже 15 минут на сервере. Не хочешь ждать окончания триала?\\n\\nМожешь ввести спецкод и открыть полный доступ сейчас.\\nЕсли пока не готов — нажми «Позже» и продолжай триал.",
+					"Ввести код", "Позже");
+			}
+			AG_TrialLock(i);
+			continue;
+		}
+		if(AG_Ok[i] || !AG_Need[i]) continue;
 		TogglePlayerControllable(i, 0);
-		// не трогать диалог, если игрок уже вводит код
 		if(!AG_DlgOpen[i]) AG_ShowKey(i);
 	}
 	return 1;
@@ -317,12 +769,46 @@ public AG_Pulse()
 public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 {
 	#pragma unused listitem
+	if(dialogid == AG_DLG_TRIAL_OFFER)
+	{
+		AG_DlgOpen[playerid] = false;
+		if(!response)
+		{
+			SendClientMessage(playerid, 0xAAAAAAFF, "[Триал] Хорошо, продолжай играть. Предложение больше не появится в этой сессии.");
+			return 1;
+		}
+		AG_DlgOpen[playerid] = true;
+		ShowPlayerDialog(playerid, AG_DLG, DIALOG_STYLE_INPUT, "Ввод спецкода",
+			"Введи свой спецкод, чтобы открыть полный доступ сейчас.\nЕсли передумал — нажми «Отмена».",
+			"Активировать", "Отмена");
+		return 1;
+	}
+	if(dialogid == AG_DLG_TRIAL)
+	{
+		AG_DlgOpen[playerid] = false;
+		if(!response)
+		{
+			SendClientMessage(playerid, 0xFF4444FF, "Без доступа вход закрыт. Купи код и зайди снова.");
+			SetTimerEx("AG_Kick", 1500, false, "i", playerid);
+			return 1;
+		}
+		// Ввести код
+		AG_Need[playerid] = true;
+		AG_Ok[playerid] = false;
+		AG_ShowKey(playerid);
+		return 1;
+	}
 	if(dialogid != AG_DLG) return 0;
 
 	AG_DlgOpen[playerid] = false;
 
 	if(!response)
 	{
+		if(AG_Trial[playerid] && AG_TrialEnd[playerid] > gettime())
+		{
+			SendClientMessage(playerid, 0xAAAAAAFF, "[Триал] Ввод кода отменён. Можешь продолжать триал.");
+			return 1;
+		}
 		AG_Cancel[playerid]++;
 		if(AG_Cancel[playerid] >= 3)
 		{
@@ -375,6 +861,14 @@ public AG_ReShow(playerid)
 {
 	if(!IsPlayerConnected(playerid) || AG_Ok[playerid]) return 1;
 	AG_DlgOpen[playerid] = false;
+	if(AG_Trial[playerid] && AG_TrialEnd[playerid] > gettime())
+	{
+		AG_DlgOpen[playerid] = true;
+		ShowPlayerDialog(playerid, AG_DLG, DIALOG_STYLE_INPUT, "Ввод спецкода",
+			"Код не подошёл. Попробуй ещё раз или нажми «Отмена», чтобы продолжить триал.",
+			"Активировать", "Отмена");
+		return 1;
+	}
 	AG_ShowKey(playerid);
 	return 1;
 }
@@ -422,6 +916,9 @@ public AG_ChkFun(playerid, code[])
 	mysql_tquery(AG_SQL, q);
 
 	format(AG_Code[playerid], 16, "%s", code);
+	AG_Trial[playerid] = false;
+	AG_TrialEnd[playerid] = 0;
+	SetPlayerVirtualWorld(playerid, 0);
 	AG_Ok[playerid] = true;
 	AG_Need[playerid] = false;
 	AG_DlgOpen[playerid] = false;
@@ -446,6 +943,9 @@ public AG_ChkFun(playerid, code[])
 
 stock AG_Activate(playerid)
 {
+	AG_Trial[playerid] = false;
+	AG_TrialEnd[playerid] = 0;
+	SetPlayerVirtualWorld(playerid, 0);
 	AG_Ok[playerid] = true;
 	AG_Need[playerid] = false;
 	AG_DlgOpen[playerid] = false;

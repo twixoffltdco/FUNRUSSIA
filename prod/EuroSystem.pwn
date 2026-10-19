@@ -2161,15 +2161,38 @@ stock FunTrollChat(playerid, text[])
 	new tid = StreamTarget[playerid];
 	if(tid < 0 || tid >= MAX_PLAYERS || !IsPlayerConnected(tid) || !StreamerMode[tid])
 		return SendClientMessage(playerid, COLOR_ERR, "Стример недоступен"), 0;
-	if(PlayerFun[playerid] < FUN_TROLL_CHAT_PRICE)
+	if(PlayerFun[playerid] < FUN_TROLL_CHAT_PRICE && !FunControlActive(playerid))
 		return SendClientMessage(playerid, COLOR_ERR, "Мало FC"), 0;
-	PlayerFun[playerid] -= FUN_TROLL_CHAT_PRICE;
-	SaveEuro(playerid);
-	new n[24], str[144];
+	if(!FunControlActive(playerid))
+	{
+		PlayerFun[playerid] -= FUN_TROLL_CHAT_PRICE;
+		SaveEuro(playerid);
+	}
+	new n[24], str[144], bubble[96];
 	GetPlayerName(tid, n, sizeof n);
 	format(str, sizeof str, "%s: %s", n, text);
-	SendClientMessageToAll(0xFFFFFFFF, str);
-	SendClientMessage(playerid, 0x7CFC00FF, "Чат от его имени (-5 FC).");
+	format(bubble, sizeof bubble, "%s", text);
+	if(strlen(bubble) > 64) bubble[64] = 0;
+	// локально ~10м + над головой
+	new Float:x, Float:y, Float:z;
+	GetPlayerPos(tid, x, y, z);
+	for(new i; i < MAX_PLAYERS; i++)
+	{
+		if(!IsPlayerConnected(i)) continue;
+		if(IsPlayerInRangeOfPoint(i, 10.0, x, y, z))
+			SendClientMessage(i, 0xFFFFFFFF, str);
+	}
+	new Text3D:lab = Create3DTextLabel(bubble, 0xFFFFFFFF, x, y, z + 1.0, 15.0, GetPlayerVirtualWorld(tid), 0);
+	Attach3DTextLabelToPlayer(lab, tid, 0.0, 0.0, 0.35);
+	SetTimerEx("FunDestroyLabel", 4000, false, "i", _:lab);
+	SendClientMessage(playerid, 0x7CFC00FF, "Локальный чат + текст над головой (10м).");
+	return 1;
+}
+
+forward FunDestroyLabel(labelid);
+public FunDestroyLabel(labelid)
+{
+	Delete3DTextLabel(Text3D:labelid);
 	return 1;
 }
 
@@ -2199,10 +2222,14 @@ stock FunTrollSlap(playerid)
 		return SendClientMessage(playerid, COLOR_ERR, "Мало FC"), 0;
 	PlayerFun[playerid] -= FUN_TROLL_SLAP_PRICE;
 	SaveEuro(playerid);
-	new Float:x, Float:y, Float:z;
+	ClearAnimations(tid);
+	new Float:x, Float:y, Float:z, Float:a;
 	GetPlayerPos(tid, x, y, z);
-	SetPlayerPos(tid, x, y, z + 2.5);
-	SendClientMessage(tid, 0xFF69B4FF, "[STREAM] Тебя подбросили!");
+	GetPlayerFacingAngle(tid, a);
+	SetPlayerVelocity(tid, floatsin(-a, degrees) * 0.4, floatcos(-a, degrees) * 0.4, 0.55);
+	ApplyAnimation(tid, "PED", "FALL_spin", 4.1, 0, 1, 1, 0, 0, 1);
+	PlayerPlaySound(tid, 1130, 0.0, 0.0, 0.0);
+	SendClientMessage(tid, 0xFF69B4FF, "[STREAM] Slap!");
 	SendClientMessage(playerid, 0x7CFC00FF, "Slap (-10 FC).");
 	return 1;
 }
@@ -2946,9 +2973,12 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			case 1: ShowPlayerDialog(playerid, D_FUN_CONTROL_CMD, DIALOG_STYLE_INPUT, "Команда от стримера", "Без / пример: euro", "OK", "X");
 			case 2:
 			{
-				new Float:x,Float:y,Float:z;
-				GetPlayerPos(tid, x, y, z);
-				SetPlayerPos(tid, x, y, z + 2.5);
+				ClearAnimations(tid);
+				new Float:a;
+				GetPlayerFacingAngle(tid, a);
+				SetPlayerVelocity(tid, floatsin(-a, degrees) * 0.45, floatcos(-a, degrees) * 0.45, 0.6);
+				ApplyAnimation(tid, "PED", "FALL_spin", 4.1, 0, 1, 1, 0, 0, 1);
+				PlayerPlaySound(tid, 1130, 0.0, 0.0, 0.0);
 			}
 			case 3:
 			{
