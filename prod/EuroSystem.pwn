@@ -100,6 +100,29 @@
 #define D_FUN_CODE_LIST		29576
 #define D_FUN_ACTIVATE		29577
 #define D_FUN_TOP			29578
+#define D_FUN_PROP_TYPE		29579
+#define D_FUN_PROP_LIST		29580
+#define D_FUN_PROP_DAYS		29581
+#define FUN_RENT_PER_DAY		10
+#define FUN_RESTART_PRICE		500000
+#define FUN_STREAMER_ON_PRICE	10
+#define FUN_TROLL_CHAT_PRICE	5
+#define FUN_TROLL_FREEZE_PRICE	15
+#define FUN_TROLL_SLAP_PRICE	10
+#define FUN_TROLL_MSG_PRICE		5
+#define FUN_CONTROL_PRICE		5000
+#define FUN_CONTROL_SEC			60
+#define D_FUN_CONTROL			29589
+#define D_FUN_CONTROL_CMD		29590
+#define D_FUN_CONTROL_SKIN		29591
+#define D_FUN_CONTROL_SAY		29592
+#define D_FUN_RESTART			29582
+#define D_FUN_RESTART_MIN		29583
+#define D_FUN_STREAM_MENU		29584
+#define D_FUN_STREAM_ID			29585
+#define D_FUN_STREAM_ACT		29586
+#define D_FUN_STREAM_CHAT		29587
+#define D_FUN_STREAM_MSG		29588
 
 #define FUN_HOUR_REWARD		200
 #define FUN_CODE_PRICE		500
@@ -125,6 +148,20 @@ new FunCodeDays[MAX_PLAYERS];
 new FunListIds[MAX_PLAYERS][12]; // code row ids for revoke menu
 new FunListCount[MAX_PLAYERS];
 new EuroMenuTick[MAX_PLAYERS];
+new FunPropIds[MAX_PLAYERS][20];
+new FunPropCount[MAX_PLAYERS];
+new FunPropType[MAX_PLAYERS]; // 0 house 1 biz 2 azs 3 garage 4 hotel 5 bought 6 br_garage
+new FunPropSel[MAX_PLAYERS];
+new bool:StreamerMode[MAX_PLAYERS];
+new StreamTarget[MAX_PLAYERS];
+new gRestartTimer;
+new gRestartLeft; // seconds
+new gRestartBy[MAX_PLAYER_NAME];
+new gRestartByAcc;
+new bool:gRestartActive;
+new ControlTarget[MAX_PLAYERS]; // кого контролит playerid
+new ControlUntil[MAX_PLAYERS];  // gettime() конец сессии
+new ControlledBy[MAX_PLAYERS];  // кто контролит этого стримера
 new PlayerPlaySec[MAX_PLAYERS], PlayerRandBuys[MAX_PLAYERS];
 new PlayerFlyTimer[MAX_PLAYERS];
 new KztExMode[MAX_PLAYERS];
@@ -1400,7 +1437,7 @@ stock ShowFunMenu(playerid)
 	}
 	new body[1400];
 	format(body, sizeof body,
-		"Баланс FC: %d\n+200 каждый час\nКупить код (500 FC)\nМои коды\nПередать FC (99%%)\nFC в евро (99%%)\nFC в бит (99%%)\nЕвро в FC (99%%)\nБит в FC (99%%)\nМем в FC (99%%)\nГривна в FC (99%%)\nТенге в FC (99%%)\nТоп FC\nНазад",
+		"Баланс FC: %d\n+200 каждый час\nКупить код (500 FC)\nМои коды\nПередать FC (99%%)\nFC в евро (99%%)\nFC в бит (99%%)\nЕвро в FC (99%%)\nБит в FC (99%%)\nМем в FC (99%%)\nГривна в FC (99%%)\nТенге в FC (99%%)\nОплатить имущество (10 FC/день)\nРестарт сервера (500000 FC)\nРежим стримера\nТоп FC\nНазад",
 		PlayerFun[playerid]);
 	ShowPlayerDialog(playerid, D_FUN_MENU, DIALOG_STYLE_LIST, "{7CFC00}Фанкоины", body, "OK", "X");
 	return 1;
@@ -1816,6 +1853,493 @@ stock Cmd(playerid, cmd[])
 }
 
 
+
+stock FunPropOpen(playerid)
+{
+	if(!PlayerLoaded[playerid] || PlayerAccID[playerid] < 1)
+		return SendClientMessage(playerid, COLOR_ERR, "Баланс не загружен"), 0;
+	ShowPlayerDialog(playerid, D_FUN_PROP_TYPE, DIALOG_STYLE_LIST, "Имущество FC",
+		"Дом (houses)\nБизнес\nАЗС\nГараж\nОтель\nКупленный дом\nBR гараж\nВвести ID вручную\nНазад",
+		"OK", "X");
+	return 1;
+}
+
+stock FunPropLoad(playerid, ptype)
+{
+	if(!gSQLOk || !PlayerLoaded[playerid]) return 0;
+	FunPropType[playerid] = ptype;
+	FunPropCount[playerid] = 0;
+	new q[420], acc = PlayerAccID[playerid], nick[MAX_PLAYER_NAME];
+	GetPlayerName(playerid, nick, sizeof nick);
+
+	// основной поиск: JOIN по нику (надёжнее, чем только owner_id)
+	if(ptype == 0)
+		mysql_format(gSQL, q, sizeof q,
+			"SELECT h.`id`, h.`name`, h.`rent_time` FROM `houses` h INNER JOIN `accounts` a ON a.`id`=h.`owner_id` WHERE a.`name`='%e' OR h.`owner_id`=%d LIMIT 20",
+			nick, acc);
+	else if(ptype == 1)
+		mysql_format(gSQL, q, sizeof q,
+			"SELECT b.`id`, b.`name`, b.`rent_time` FROM `business` b INNER JOIN `accounts` a ON a.`id`=b.`owner_id` WHERE a.`name`='%e' OR b.`owner_id`=%d LIMIT 20",
+			nick, acc);
+	else if(ptype == 2)
+		mysql_format(gSQL, q, sizeof q,
+			"SELECT f.`id`, f.`name`, f.`rent_time` FROM `fuel_stations` f INNER JOIN `accounts` a ON a.`id`=f.`owner_id` WHERE a.`name`='%e' OR f.`owner_id`=%d LIMIT 20",
+			nick, acc);
+	else if(ptype == 3)
+		mysql_format(gSQL, q, sizeof q,
+			"SELECT g.`id`, 'garage', g.`rent_time` FROM `garages` g INNER JOIN `accounts` a ON a.`id`=g.`owner_id` WHERE a.`name`='%e' OR g.`owner_id`=%d LIMIT 20",
+			nick, acc);
+	else if(ptype == 4)
+		mysql_format(gSQL, q, sizeof q,
+			"SELECT h.`id`, 'hotel', h.`rent_time` FROM `hotels` h INNER JOIN `accounts` a ON a.`id`=h.`owner_id` WHERE a.`name`='%e' OR h.`owner_id`=%d LIMIT 20",
+			nick, acc);
+	else if(ptype == 5)
+		mysql_format(gSQL, q, sizeof q,
+			"SELECT `house_id`, IFNULL(`owner_name`,''), `rent_time` FROM `bought_houses` WHERE `account_id`=%d OR `owner_name`='%e' LIMIT 20",
+			acc, nick);
+	else if(ptype == 6)
+		mysql_format(gSQL, q, sizeof q,
+			"SELECT `id`, IFNULL(`owner_name`,''), `rent_time` FROM `br_garages` WHERE `owner_id`=%d OR `owner_name`='%e' LIMIT 20",
+			acc, nick);
+	else return 0;
+
+	printf("[Fun] PROP list type=%d acc=%d nick=%s", ptype, acc, nick);
+	mysql_tquery(gSQL, q, "OnFunPropList", "i", playerid);
+	return 1;
+}
+
+forward OnFunPropList(playerid);
+public OnFunPropList(playerid)
+{
+	if(!IsPlayerConnected(playerid)) return 1;
+	new rows = cache_get_row_count(gSQL);
+	if(rows < 1)
+	{
+		SendClientMessage(playerid, COLOR_ERR, "Список пуст. Попробуй: Имущество -> Ввести ID вручную (ID смотри в /business или маркере).");
+		printf("[Fun] PROP empty acc=%d type=%d", PlayerAccID[playerid], FunPropType[playerid]);
+		return FunPropOpen(playerid);
+	}
+	new body[1400], line[96], nm[32];
+	body[0] = 0;
+	FunPropCount[playerid] = 0;
+	new nowt = gettime();
+	for(new i; i < rows && i < 20; i++)
+	{
+		new id = cache_get_row_int(i, 0, gSQL);
+		cache_get_row(i, 1, nm, gSQL, sizeof nm);
+		new rt = cache_get_row_int(i, 2, gSQL);
+		FunPropIds[playerid][FunPropCount[playerid]++] = id;
+		new left = 0;
+		if(rt > nowt) left = (rt - nowt) / 86400;
+		format(line, sizeof line, "ID %d %s | ~%d дн.\\n", id, nm, left);
+		strcat(body, line);
+	}
+	strcat(body, "Назад");
+	ShowPlayerDialog(playerid, D_FUN_PROP_LIST, DIALOG_STYLE_LIST, "Ваш объект", body, "OK", "X");
+	return 1;
+}
+
+stock FunPropAskDays(playerid, listitem)
+{
+	if(listitem < 0 || listitem >= FunPropCount[playerid]) return FunPropOpen(playerid);
+	FunPropSel[playerid] = FunPropIds[playerid][listitem];
+	ShowPlayerDialog(playerid, D_FUN_PROP_DAYS, DIALOG_STYLE_LIST, "Срок оплаты",
+		"30 дней (300 FC)\\n90 дней (900 FC)\\n1 год (3650 FC)\\n2 года (7300 FC)\\n3 года (10950 FC)\\n5 лет (18250 FC)\\nНазад",
+		"OK", "X");
+	return 1;
+}
+
+stock FunPropPay(playerid, days)
+{
+	if(!PlayerLoaded[playerid] || PlayerAccID[playerid] < 1) return 0;
+	if(days != 30 && days != 90 && days != 365 && days != 730 && days != 1095 && days != 1825)
+		return 0;
+	new cost = days * FUN_RENT_PER_DAY;
+	if(PlayerFun[playerid] < cost)
+	{
+		new str[96];
+		format(str, sizeof str, "Нужно %d FC (есть %d).", cost, PlayerFun[playerid]);
+		return SendClientMessage(playerid, COLOR_ERR, str), 0;
+	}
+	new pid = FunPropSel[playerid];
+	new ptype = FunPropType[playerid];
+	new acc = PlayerAccID[playerid];
+	new nowt = gettime();
+	new q[400];
+	if(ptype == 0)
+		mysql_format(gSQL, q, sizeof q,
+			"UPDATE `houses` SET `rent_time`=IF(`rent_time`>%d,`rent_time`,%d)+%d WHERE `id`=%d AND `owner_id`=%d LIMIT 1",
+			nowt, nowt, days * 86400, pid, acc);
+	else if(ptype == 1)
+		mysql_format(gSQL, q, sizeof q,
+			"UPDATE `business` SET `rent_time`=IF(`rent_time`>%d,`rent_time`,%d)+%d WHERE `id`=%d AND `owner_id`=%d LIMIT 1",
+			nowt, nowt, days * 86400, pid, acc);
+	else if(ptype == 2)
+		mysql_format(gSQL, q, sizeof q,
+			"UPDATE `fuel_stations` SET `rent_time`=IF(`rent_time`>%d,`rent_time`,%d)+%d WHERE `id`=%d AND `owner_id`=%d LIMIT 1",
+			nowt, nowt, days * 86400, pid, acc);
+	else if(ptype == 3)
+		mysql_format(gSQL, q, sizeof q,
+			"UPDATE `garages` SET `rent_time`=IF(`rent_time`>%d,`rent_time`,%d)+%d WHERE `id`=%d AND `owner_id`=%d LIMIT 1",
+			nowt, nowt, days * 86400, pid, acc);
+	else if(ptype == 4)
+		mysql_format(gSQL, q, sizeof q,
+			"UPDATE `hotels` SET `rent_time`=IF(`rent_time`>%d,`rent_time`,%d)+%d WHERE `id`=%d AND `owner_id`=%d LIMIT 1",
+			nowt, nowt, days * 86400, pid, acc);
+	else if(ptype == 5)
+		mysql_format(gSQL, q, sizeof q,
+			"UPDATE `bought_houses` SET `rent_time`=IF(`rent_time`>%d,`rent_time`,%d)+%d WHERE `house_id`=%d AND `account_id`=%d LIMIT 1",
+			nowt, nowt, days * 86400, pid, acc);
+	else if(ptype == 6)
+		mysql_format(gSQL, q, sizeof q,
+			"UPDATE `br_garages` SET `rent_time`=IF(`rent_time`>%d,`rent_time`,%d)+%d WHERE `id`=%d AND `owner_id`=%d LIMIT 1",
+			nowt, nowt, days * 86400, pid, acc);
+	else return 0;
+
+	PlayerFun[playerid] -= cost;
+	SaveEuro(playerid);
+	mysql_tquery(gSQL, q);
+
+	new str[140];
+	format(str, sizeof str, "{7CFC00}Оплата: +%d дн., -%d FC. ID %d. Если в игре срок не обновился — рестарт/релог или ждать тик GM.", days, cost, pid);
+	SendClientMessage(playerid, -1, str);
+	printf("[Fun] PROP pay acc=%d type=%d id=%d days=%d cost=%d", acc, ptype, pid, days, cost);
+	return 1;
+}
+
+
+
+stock FunRestartMenu(playerid)
+{
+	if(!PlayerLoaded[playerid]) return 0;
+	if(gRestartActive)
+	{
+		new str[128];
+		format(str, sizeof str, "Рестарт уже идёт: ~%d мин. Заказал: %s", (gRestartLeft + 59) / 60, gRestartBy);
+		return SendClientMessage(playerid, COLOR_ERR, str), 1;
+	}
+	ShowPlayerDialog(playerid, D_FUN_RESTART_MIN, DIALOG_STYLE_LIST, "Рестарт сервера",
+		"Через 15 минут (500000 FC)\nЧерез 30 минут (500000 FC)\nОтмена",
+		"OK", "X");
+	return 1;
+}
+
+stock FunRestartBuy(playerid, minutes)
+{
+	if(!PlayerLoaded[playerid] || PlayerAccID[playerid] < 1) return 0;
+	if(gRestartActive) return SendClientMessage(playerid, COLOR_ERR, "Рестарт уже запланирован"), 0;
+	if(minutes != 15 && minutes != 30) return 0;
+	if(PlayerFun[playerid] < FUN_RESTART_PRICE)
+		return SendClientMessage(playerid, COLOR_ERR, "Нужно 500000 FC"), 0;
+
+	PlayerFun[playerid] -= FUN_RESTART_PRICE;
+	SaveEuro(playerid);
+
+	gRestartActive = true;
+	gRestartLeft = minutes * 60;
+	gRestartByAcc = PlayerAccID[playerid];
+	GetPlayerName(playerid, gRestartBy, sizeof gRestartBy);
+
+	if(gRestartTimer) KillTimer(gRestartTimer);
+	gRestartTimer = SetTimer("FunRestartTick", 60000, true);
+
+	new str[180];
+	format(str, sizeof str, "{FF4500}[RESTART] {FFFFFF}%s {FF4500}оплатил рестарт за FC. Через {FFFFFF}%d {FF4500}мин. сервер перезапустится!", gRestartBy, minutes);
+	SendClientMessageToAll(-1, str);
+	printf("[Fun] RESTART by %s acc=%d in %d min", gRestartBy, gRestartByAcc, minutes);
+	return 1;
+}
+
+forward FunRestartTick();
+public FunRestartTick()
+{
+	if(!gRestartActive) return 1;
+	gRestartLeft -= 60;
+	if(gRestartLeft < 0) gRestartLeft = 0;
+
+	new mins = (gRestartLeft + 59) / 60;
+	new str[180];
+	if(gRestartLeft <= 0)
+	{
+		format(str, sizeof str, "{FF0000}[RESTART] Рестарт СЕЙЧАС! Заказал: %s", gRestartBy);
+		SendClientMessageToAll(-1, str);
+		if(gRestartTimer) { KillTimer(gRestartTimer); gRestartTimer = 0; }
+		gRestartActive = false;
+		if(gSQLOk && gRestartByAcc > 0)
+		{
+			new q[180];
+			mysql_format(gSQL, q, sizeof q,
+				"UPDATE `accounts` SET `fun_restart_cd`=%d, `fun_play_after_rst`=0 WHERE `id`=%d LIMIT 1",
+				gettime() + 3600, gRestartByAcc);
+			mysql_tquery(gSQL, q);
+		}
+		SetTimer("FunDoRestart", 3000, false);
+		return 1;
+	}
+	format(str, sizeof str, "{FF4500}[RESTART] Через {FFFFFF}%d {FF4500}мин. рестарт (заказал {FFFFFF}%s{FF4500}).", mins, gRestartBy);
+	SendClientMessageToAll(-1, str);
+	return 1;
+}
+
+forward FunDoRestart();
+public FunDoRestart()
+{
+	print("[Fun] RESTART SendRconCommand gmx");
+	SendRconCommand("gmx");
+	return 1;
+}
+
+stock FunRestartOnConnect(playerid)
+{
+	if(!gRestartActive) return 0;
+	new str[140];
+	format(str, sizeof str, "{FF4500}[RESTART] Через ~%d мин. рестарт (заказал %s).", (gRestartLeft + 59) / 60, gRestartBy);
+	SendClientMessage(playerid, -1, str);
+	return 1;
+}
+
+stock FunStreamMenu(playerid)
+{
+	if(!PlayerLoaded[playerid]) return 0;
+	new body[400];
+	format(body, sizeof body,
+		"Статус стримера: %s\nВключить режим стримера (%d FC)\nВыключить режим\nПриколоться над стримером\nНазад",
+		StreamerMode[playerid] ? ("VKL") : ("VIKL"), FUN_STREAMER_ON_PRICE);
+	// fix russian
+	format(body, sizeof body,
+		"Статус: %s\nВключить режим стримера (%d FC)\nВыключить\nПриколоться над стримером\nНазад",
+		StreamerMode[playerid] ? "ВКЛ" : "ВЫКЛ", FUN_STREAMER_ON_PRICE);
+	ShowPlayerDialog(playerid, D_FUN_STREAM_MENU, DIALOG_STYLE_LIST, "Режим стримера", body, "OK", "X");
+	return 1;
+}
+
+stock FunStreamEnable(playerid)
+{
+	if(StreamerMode[playerid]) return SendClientMessage(playerid, 0x7CFC00FF, "Уже включен"), 1;
+	if(PlayerFun[playerid] < FUN_STREAMER_ON_PRICE)
+		return SendClientMessage(playerid, COLOR_ERR, "Нужно 10 FC"), 0;
+	PlayerFun[playerid] -= FUN_STREAMER_ON_PRICE;
+	SaveEuro(playerid);
+	StreamerMode[playerid] = true;
+	SendClientMessage(playerid, 0x7CFC00FF, "Режим стримера ВКЛ. Другие могут троллить за FC.");
+	new n[24], str[100];
+	GetPlayerName(playerid, n, sizeof n);
+	format(str, sizeof str, "{7CFC00}[STREAM] {FFFFFF}%s {7CFC00}включил режим стримера!", n);
+	SendClientMessageToAll(-1, str);
+	return 1;
+}
+
+stock FunStreamDisable(playerid)
+{
+	StreamerMode[playerid] = false;
+	SendClientMessage(playerid, COLOR_ERR, "Режим стримера выключен.");
+	return 1;
+}
+
+stock FunTrollPick(playerid)
+{
+	ShowPlayerDialog(playerid, D_FUN_STREAM_ID, DIALOG_STYLE_INPUT, "ID стримера",
+		"ID игрока с ВКЛ режимом стримера:", "OK", "X");
+	return 1;
+}
+
+stock FunTrollMenu(playerid, tid)
+{
+	if(tid < 0 || tid >= MAX_PLAYERS || !IsPlayerConnected(tid))
+		return SendClientMessage(playerid, COLOR_ERR, "Игрок офф"), 0;
+	if(!StreamerMode[tid])
+		return SendClientMessage(playerid, COLOR_ERR, "У него выключен режим стримера"), 0;
+	StreamTarget[playerid] = tid;
+	ShowPlayerDialog(playerid, D_FUN_STREAM_ACT, DIALOG_STYLE_LIST, "Тролл-меню",
+		"Чат от его имени (5 FC)\nСообщение на экран (5 FC)\nПодбросить (10 FC)\nЗаморозить 3 сек (15 FC)\nФУЛЛ-КОНТРОЛЬ 60 сек (5000 FC)\nНазад",
+		"OK", "X");
+	return 1;
+}
+
+stock FunTrollChat(playerid, text[])
+{
+	new tid = StreamTarget[playerid];
+	if(tid < 0 || tid >= MAX_PLAYERS || !IsPlayerConnected(tid) || !StreamerMode[tid])
+		return SendClientMessage(playerid, COLOR_ERR, "Стример недоступен"), 0;
+	if(PlayerFun[playerid] < FUN_TROLL_CHAT_PRICE)
+		return SendClientMessage(playerid, COLOR_ERR, "Мало FC"), 0;
+	PlayerFun[playerid] -= FUN_TROLL_CHAT_PRICE;
+	SaveEuro(playerid);
+	new n[24], str[144];
+	GetPlayerName(tid, n, sizeof n);
+	format(str, sizeof str, "%s: %s", n, text);
+	SendClientMessageToAll(0xFFFFFFFF, str);
+	SendClientMessage(playerid, 0x7CFC00FF, "Чат от его имени (-5 FC).");
+	return 1;
+}
+
+stock FunTrollMsg(playerid, text[])
+{
+	new tid = StreamTarget[playerid];
+	if(tid < 0 || tid >= MAX_PLAYERS || !IsPlayerConnected(tid) || !StreamerMode[tid])
+		return SendClientMessage(playerid, COLOR_ERR, "Стример недоступен"), 0;
+	if(PlayerFun[playerid] < FUN_TROLL_MSG_PRICE)
+		return SendClientMessage(playerid, COLOR_ERR, "Мало FC"), 0;
+	PlayerFun[playerid] -= FUN_TROLL_MSG_PRICE;
+	SaveEuro(playerid);
+	new str[144];
+	format(str, sizeof str, "{FF69B4}[STREAM] {FFFFFF}%s", text);
+	SendClientMessage(tid, -1, str);
+	GameTextForPlayer(tid, text, 4000, 3);
+	SendClientMessage(playerid, 0x7CFC00FF, "Показано стримеру (-5 FC).");
+	return 1;
+}
+
+stock FunTrollSlap(playerid)
+{
+	new tid = StreamTarget[playerid];
+	if(tid < 0 || tid >= MAX_PLAYERS || !IsPlayerConnected(tid) || !StreamerMode[tid])
+		return SendClientMessage(playerid, COLOR_ERR, "Стример недоступен"), 0;
+	if(PlayerFun[playerid] < FUN_TROLL_SLAP_PRICE)
+		return SendClientMessage(playerid, COLOR_ERR, "Мало FC"), 0;
+	PlayerFun[playerid] -= FUN_TROLL_SLAP_PRICE;
+	SaveEuro(playerid);
+	new Float:x, Float:y, Float:z;
+	GetPlayerPos(tid, x, y, z);
+	SetPlayerPos(tid, x, y, z + 2.5);
+	SendClientMessage(tid, 0xFF69B4FF, "[STREAM] Тебя подбросили!");
+	SendClientMessage(playerid, 0x7CFC00FF, "Slap (-10 FC).");
+	return 1;
+}
+
+stock FunTrollFreeze(playerid)
+{
+	new tid = StreamTarget[playerid];
+	if(tid < 0 || tid >= MAX_PLAYERS || !IsPlayerConnected(tid) || !StreamerMode[tid])
+		return SendClientMessage(playerid, COLOR_ERR, "Стример недоступен"), 0;
+	if(PlayerFun[playerid] < FUN_TROLL_FREEZE_PRICE)
+		return SendClientMessage(playerid, COLOR_ERR, "Мало FC"), 0;
+	PlayerFun[playerid] -= FUN_TROLL_FREEZE_PRICE;
+	SaveEuro(playerid);
+	TogglePlayerControllable(tid, 0);
+	SetTimerEx("FunTrollUnfreeze", 3000, false, "i", tid);
+	SendClientMessage(tid, 0xFF69B4FF, "[STREAM] Заморозка 3 сек!");
+	SendClientMessage(playerid, 0x7CFC00FF, "Freeze (-15 FC).");
+	return 1;
+}
+
+
+stock bool:FunControlActive(playerid)
+{
+	if(playerid < 0 || playerid >= MAX_PLAYERS) return false;
+	if(ControlUntil[playerid] < gettime()) return false;
+	new tid = ControlTarget[playerid];
+	if(tid < 0 || tid >= MAX_PLAYERS || !IsPlayerConnected(tid)) return false;
+	if(!StreamerMode[tid]) return false;
+	return true;
+}
+
+stock FunControlBuy(playerid)
+{
+	new tid = StreamTarget[playerid];
+	if(tid < 0 || tid >= MAX_PLAYERS || !IsPlayerConnected(tid) || !StreamerMode[tid])
+		return SendClientMessage(playerid, COLOR_ERR, "Стример недоступен / режим выкл"), 0;
+	if(ControlledBy[tid] != INVALID_PLAYER_ID && IsPlayerConnected(ControlledBy[tid]) && ControlUntil[ControlledBy[tid]] >= gettime())
+		return SendClientMessage(playerid, COLOR_ERR, "Им уже кто-то управляет"), 0;
+	if(PlayerFun[playerid] < FUN_CONTROL_PRICE)
+		return SendClientMessage(playerid, COLOR_ERR, "Нужно 5000 FC"), 0;
+
+	PlayerFun[playerid] -= FUN_CONTROL_PRICE;
+	SaveEuro(playerid);
+
+	ControlTarget[playerid] = tid;
+	ControlUntil[playerid] = gettime() + FUN_CONTROL_SEC;
+	ControlledBy[tid] = playerid;
+	StreamTarget[playerid] = tid;
+
+	new n[24], str[140];
+	GetPlayerName(playerid, n, sizeof n);
+	format(str, sizeof str, "{FF69B4}[STREAM] {FFFFFF}%s {FF69B4}купил ФУЛЛ-контроль над тобой на 60 сек!", n);
+	SendClientMessage(tid, -1, str);
+	GetPlayerName(tid, n, sizeof n);
+	format(str, sizeof str, "{7CFC00}ФУЛЛ-контроль над %s на 60 секунд. Открываю меню.", n);
+	SendClientMessage(playerid, -1, str);
+
+	SetTimerEx("FunControlEnd", FUN_CONTROL_SEC * 1000, false, "i", playerid);
+	FunControlMenu(playerid);
+	return 1;
+}
+
+stock FunControlMenu(playerid)
+{
+	if(!FunControlActive(playerid))
+		return SendClientMessage(playerid, COLOR_ERR, "Контроль закончился"), 0;
+	new left = ControlUntil[playerid] - gettime();
+	if(left < 0) left = 0;
+	new title[48];
+	format(title, sizeof title, "Контроль (%d сек)", left);
+	ShowPlayerDialog(playerid, D_FUN_CONTROL, DIALOG_STYLE_LIST, title,
+		"1 Чат от него\n2 Команда от него\n3 Подбросить\n4 Заморозить\n5 ТП к себе\n6 HP 10\n7 Хил 100\n8 Джетпак\n9 Из авто\n10 Пьяный\n11 Танец\n12 Скин\n13 TROLLED\n14 Фейк-бан\n15 Фейк-кик\n16 Слепота\n17 Огонь\n18 Рандом аним\n19 Разворот 180\n20 Мини-бум\n21 Сесть\n22 Руки вверх\n23 Звук\n24 Фейк-донат чат\n25 Фейк-варн\n26 Фейк +лвл\n27 Буст скорость\n28 Медленно\n29 Невидимость on\n30 Невидимость off\n31 Камера тряска\n32 Оружие desert\n33 Разоружить\n34 В воду (Z-5)\n35 На небо (Z+20)\n36 Сесть на байк-аним\n37 Лежать\n38 Смех-аним\n39 Обновить меню",
+		"OK", "X");
+	return 1;
+}
+
+stock FunControlCmd(playerid, cmdtext[])
+{
+	if(!FunControlActive(playerid)) return 0;
+	new tid = ControlTarget[playerid];
+	new cmd[128];
+	format(cmd, sizeof cmd, "%s", cmdtext);
+	// убрать ведущий /
+	if(cmd[0] == '/') strdel(cmd, 0, 1);
+
+	// чат-команды точки/слэша мода — пробуем как текст от стримера
+	new line[144], n[24];
+	GetPlayerName(tid, n, sizeof n);
+
+	// .cmd или /cmd вид для игроков
+	if(strfind(cmd, "me ") == 0 || strfind(cmd, "do ") == 0)
+	{
+		format(line, sizeof line, "* %s %s", n, cmd[3]);
+		SendClientMessageToAll(0xC2A2DAFF, line);
+	}
+	else
+	{
+		format(line, sizeof line, "%s: /%s", n, cmd);
+		SendClientMessageToAll(0xAAAAAAAA, line);
+		// попытка вызвать команду у стримера (если GM слушает OnPlayerCommandText)
+		CallRemoteFunction("OnPlayerCommandText", "is", tid, cmd);
+		// дубль с слэшем
+		new withslash[132];
+		format(withslash, sizeof withslash, "/%s", cmd);
+		CallRemoteFunction("OnPlayerCommandText", "is", tid, withslash);
+	}
+	SendClientMessage(playerid, 0x7CFC00FF, "Команда отправлена от лица стримера.");
+	return 1;
+}
+
+forward FunControlEnd(playerid);
+public FunControlEnd(playerid)
+{
+	if(playerid < 0 || playerid >= MAX_PLAYERS) return 1;
+	new tid = ControlTarget[playerid];
+	if(tid >= 0 && tid < MAX_PLAYERS)
+	{
+		if(ControlledBy[tid] == playerid) ControlledBy[tid] = INVALID_PLAYER_ID;
+		if(IsPlayerConnected(tid))
+			SendClientMessage(tid, 0x7CFC00FF, "[STREAM] Фулл-контроль над тобой закончился.");
+	}
+	ControlTarget[playerid] = INVALID_PLAYER_ID;
+	ControlUntil[playerid] = 0;
+	if(IsPlayerConnected(playerid))
+		SendClientMessage(playerid, COLOR_ERR, "Твоя сессия контроля (60 сек) закончилась.");
+	return 1;
+}
+
+
+forward FunTrollUnfreeze(playerid);
+public FunTrollUnfreeze(playerid)
+{
+	if(IsPlayerConnected(playerid)) TogglePlayerControllable(playerid, 1);
+	return 1;
+}
+
+
 forward OnFunTop(playerid);
 public OnFunTop(playerid)
 {
@@ -1853,6 +2377,16 @@ public OnFilterScriptInit()
 	mysql_tquery(gSQL, "ALTER TABLE `accounts` ADD COLUMN `play_sec` INT NOT NULL DEFAULT 0");
 	mysql_tquery(gSQL, "ALTER TABLE `accounts` ADD COLUMN `meme_rand` INT NOT NULL DEFAULT 0");
 	mysql_tquery(gSQL, "ALTER TABLE `accounts` ADD COLUMN `funcoin` INT NOT NULL DEFAULT 0");
+	mysql_tquery(gSQL, "ALTER TABLE `accounts` ADD COLUMN `fun_restart_cd` INT NOT NULL DEFAULT 0");
+	mysql_tquery(gSQL, "ALTER TABLE `accounts` ADD COLUMN `fun_play_after_rst` INT NOT NULL DEFAULT 0");
+
+	mysql_tquery(gSQL, "ALTER TABLE `houses` MODIFY `rent_time` BIGINT NOT NULL DEFAULT 0");
+	mysql_tquery(gSQL, "ALTER TABLE `business` MODIFY `rent_time` BIGINT NOT NULL DEFAULT 0");
+	mysql_tquery(gSQL, "ALTER TABLE `fuel_stations` MODIFY `rent_time` BIGINT NOT NULL DEFAULT 0");
+	mysql_tquery(gSQL, "ALTER TABLE `garages` MODIFY `rent_time` BIGINT NOT NULL DEFAULT 0");
+	mysql_tquery(gSQL, "ALTER TABLE `hotels` MODIFY `rent_time` BIGINT NOT NULL DEFAULT 0");
+	mysql_tquery(gSQL, "ALTER TABLE `bought_houses` MODIFY `rent_time` BIGINT NOT NULL DEFAULT 0");
+	mysql_tquery(gSQL, "ALTER TABLE `br_garages` MODIFY `rent_time` BIGINT NOT NULL DEFAULT 0");
 	mysql_tquery(gSQL, "CREATE TABLE IF NOT EXISTS `fun_codes` (`id` INT AUTO_INCREMENT PRIMARY KEY, `code` VARCHAR(16) NOT NULL, `from_acc` INT NOT NULL, `from_name` VARCHAR(24) NOT NULL, `to_name` VARCHAR(24) NOT NULL, `days` INT NOT NULL DEFAULT 30, `active` TINYINT NOT NULL DEFAULT 1, `used` TINYINT NOT NULL DEFAULT 0, `to_acc` INT NOT NULL DEFAULT 0, UNIQUE KEY `uk_code` (`code`)) ENGINE=InnoDB DEFAULT CHARSET=cp1251");
 	MemeLoadSeasonFromDB();
 	UpdateRate();
@@ -1875,7 +2409,7 @@ public OnPlayerConnect(playerid)
 {
 	PlayerEuro[playerid] = 0; PlayerEuroEx[playerid] = 0; PlayerAccID[playerid] = 0;
 	PlayerBit[playerid] = 0; PlayerMeme[playerid] = 0; PlayerDonate[playerid] = 0;
-	PlayerUAH[playerid] = 0; PlayerKZT[playerid] = 0; PlayerFun[playerid] = 0; PlayerPlaySec[playerid] = 0;
+	PlayerUAH[playerid] = 0; PlayerKZT[playerid] = 0; PlayerFun[playerid] = 0; PlayerPlaySec[playerid] = 0; StreamerMode[playerid] = false; StreamTarget[playerid] = INVALID_PLAYER_ID; ControlTarget[playerid] = INVALID_PLAYER_ID; ControlUntil[playerid] = 0; ControlledBy[playerid] = INVALID_PLAYER_ID;
 	PlayerRandBuys[playerid] = 0; PlayerFlyTimer[playerid] = 0; PlayerFlyActive[playerid] = 0; KztExMode[playerid] = 0;
 	UahGiveTarget[playerid] = KztGiveTarget[playerid] = INVALID_PLAYER_ID; UahExMode[playerid] = 0;
 	PlayerLastLogin[playerid] = 0; PlayerLoaded[playerid] = false;
@@ -1890,6 +2424,19 @@ public OnPlayerDisconnect(playerid, reason)
 {
 	#pragma unused reason
 	if(playerid < 0 || playerid >= MAX_PLAYERS) return 1;
+	StreamerMode[playerid] = false;
+	if(ControlledBy[playerid] != INVALID_PLAYER_ID)
+	{
+		new c = ControlledBy[playerid];
+		if(c >= 0 && c < MAX_PLAYERS)
+		{
+			ControlTarget[c] = INVALID_PLAYER_ID;
+			ControlUntil[c] = 0;
+		}
+		ControlledBy[playerid] = INVALID_PLAYER_ID;
+	}
+	ControlTarget[playerid] = INVALID_PLAYER_ID;
+	ControlUntil[playerid] = 0;
 
 	// остановить полёт — таймер иначе дергает GetPlayerKeys после leave
 	if(PlayerFlyTimer[playerid])
@@ -2291,6 +2838,284 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 	}
 
 	// ===== FUNCOIN dialogs =====
+
+	if(dialogid == D_FUN_PROP_TYPE)
+	{
+		if(!response) return ShowFunMenu(playerid);
+		if(listitem >= 0 && listitem <= 6) FunPropLoad(playerid, listitem);
+		else if(listitem == 7)
+		{
+			ShowPlayerDialog(playerid, D_FUN_PROP_LIST, DIALOG_STYLE_INPUT, "Оплата по ID",
+				"Формат: ТИП ID\nТип: 0 дом, 1 бизнес, 2 АЗС, 3 гараж, 4 отель, 5 bought, 6 BR-гараж\nПример для бизнеса 66: 1 66",
+				"OK", "X");
+			FunPropCount[playerid] = -1;
+		}
+		else ShowFunMenu(playerid);
+		return 1;
+	}
+	if(dialogid == D_FUN_PROP_LIST)
+	{
+		if(!response) return FunPropOpen(playerid);
+		if(FunPropCount[playerid] == -1)
+		{
+			new sp = strfind(inputtext, " ");
+			if(sp < 1)
+			{
+				SendClientMessage(playerid, COLOR_ERR, "Формат: тип id  (пример бизнес 66: 1 66)");
+				return FunPropOpen(playerid);
+			}
+			new t = strval(inputtext);
+			new id = strval(inputtext[sp + 1]);
+			if(t < 0 || t > 6 || id < 1)
+			{
+				SendClientMessage(playerid, COLOR_ERR, "Неверный тип или ID");
+				return FunPropOpen(playerid);
+			}
+			FunPropType[playerid] = t;
+			FunPropSel[playerid] = id;
+			FunPropCount[playerid] = 1;
+			FunPropIds[playerid][0] = id;
+			FunPropAskDays(playerid, 0);
+			return 1;
+		}
+		if(listitem < 0 || listitem >= FunPropCount[playerid]) return FunPropOpen(playerid);
+		FunPropAskDays(playerid, listitem);
+		return 1;
+	}
+	if(dialogid == D_FUN_PROP_DAYS)
+	{
+		if(!response) return FunPropOpen(playerid);
+		new days = 0;
+		if(listitem == 0) days = 30;
+		else if(listitem == 1) days = 90;
+		else if(listitem == 2) days = 365;
+		else if(listitem == 3) days = 730;
+		else if(listitem == 4) days = 1095;
+		else if(listitem == 5) days = 1825;
+		else return FunPropOpen(playerid);
+		FunPropPay(playerid, days);
+		return 1;
+	}
+
+
+	if(dialogid == D_FUN_RESTART_MIN)
+	{
+		if(!response) return ShowFunMenu(playerid);
+		if(listitem == 0) FunRestartBuy(playerid, 15);
+		else if(listitem == 1) FunRestartBuy(playerid, 30);
+		else ShowFunMenu(playerid);
+		return 1;
+	}
+	if(dialogid == D_FUN_STREAM_MENU)
+	{
+		if(!response) return ShowFunMenu(playerid);
+		if(listitem == 0) FunStreamMenu(playerid);
+		else if(listitem == 1) FunStreamEnable(playerid);
+		else if(listitem == 2) FunStreamDisable(playerid);
+		else if(listitem == 3) FunTrollPick(playerid);
+		else ShowFunMenu(playerid);
+		return 1;
+	}
+	if(dialogid == D_FUN_STREAM_ID)
+	{
+		if(!response) return FunStreamMenu(playerid);
+		FunTrollMenu(playerid, strval(inputtext));
+		return 1;
+	}
+	if(dialogid == D_FUN_STREAM_ACT)
+	{
+		if(!response) return FunStreamMenu(playerid);
+		if(listitem == 0)
+			ShowPlayerDialog(playerid, D_FUN_STREAM_CHAT, DIALOG_STYLE_INPUT, "Чат от имени", "Текст (как будто пишет стример):", "OK", "X");
+		else if(listitem == 1)
+			ShowPlayerDialog(playerid, D_FUN_STREAM_MSG, DIALOG_STYLE_INPUT, "Сообщение стримеру", "Текст на его экран:", "OK", "X");
+		else if(listitem == 2) FunTrollSlap(playerid);
+		else if(listitem == 3) FunTrollFreeze(playerid);
+		else if(listitem == 4) FunControlBuy(playerid);
+		else FunStreamMenu(playerid);
+		return 1;
+	}
+	if(dialogid == D_FUN_CONTROL)
+	{
+		if(!response) return 1;
+		if(!FunControlActive(playerid)) return SendClientMessage(playerid, COLOR_ERR, "Сессия контроля истекла"), 1;
+		new tid = ControlTarget[playerid];
+		switch(listitem)
+		{
+			case 0: ShowPlayerDialog(playerid, D_FUN_CONTROL_SAY, DIALOG_STYLE_INPUT, "Чат от стримера", "Текст:", "OK", "X");
+			case 1: ShowPlayerDialog(playerid, D_FUN_CONTROL_CMD, DIALOG_STYLE_INPUT, "Команда от стримера", "Без / пример: euro", "OK", "X");
+			case 2:
+			{
+				new Float:x,Float:y,Float:z;
+				GetPlayerPos(tid, x, y, z);
+				SetPlayerPos(tid, x, y, z + 2.5);
+			}
+			case 3:
+			{
+				TogglePlayerControllable(tid, 0);
+				SetTimerEx("FunTrollUnfreeze", 3000, false, "i", tid);
+			}
+			case 4:
+			{
+				new Float:x,Float:y,Float:z;
+				GetPlayerPos(playerid, x, y, z);
+				SetPlayerPos(tid, x + 1.0, y, z);
+			}
+			case 5: SetPlayerHealth(tid, 10.0);
+			case 6: { SetPlayerHealth(tid, 100.0); SetPlayerArmour(tid, 100.0); }
+			case 7: SetPlayerSpecialAction(tid, SPECIAL_ACTION_USEJETPACK);
+			case 8: if(IsPlayerInAnyVehicle(tid)) RemovePlayerFromVehicle(tid);
+			case 9: SetPlayerDrunkLevel(tid, 5000);
+			case 10: ApplyAnimation(tid, "DANCING", "dnce_M_a", 4.1, 1, 0, 0, 0, 0, 1);
+			case 11: ShowPlayerDialog(playerid, D_FUN_CONTROL_SKIN, DIALOG_STYLE_INPUT, "Скин", "ID скина:", "OK", "X");
+			case 12: GameTextForPlayer(tid, "~r~TROLLED", 3000, 3);
+			case 13:
+			{
+				GameTextForPlayer(tid, "~r~BANNED~n~~w~1 day (FAKE)", 6000, 3);
+				SendClientMessage(tid, 0xFF0000FF, "ФЕЙК-БАН. Это тролл стрима, не бан.");
+			}
+			case 14:
+			{
+				GameTextForPlayer(tid, "~r~KICKED (FAKE)", 4000, 3);
+				SendClientMessage(tid, 0xFF0000FF, "ФЕЙК-КИК.");
+			}
+			case 15:
+			{
+				SetPlayerTime(tid, 0, 0);
+				SetPlayerWeather(tid, 150);
+				SetTimerEx("FunTrollClearWeather", 5000, false, "i", tid);
+			}
+			case 16:
+			{
+				new Float:x,Float:y,Float:z;
+				GetPlayerPos(tid, x, y, z);
+				CreateExplosion(x, y, z - 0.5, 1, 0.3);
+			}
+			case 17:
+			{
+				switch(random(4))
+				{
+					case 0: ApplyAnimation(tid, "PED", "HANDSUP", 4.1, 0, 0, 0, 0, 0, 1);
+					case 1: ApplyAnimation(tid, "PED", "WALK_DRUNK", 4.1, 1, 1, 1, 1, 0, 1);
+					case 2: ApplyAnimation(tid, "CRACK", "crckdeth2", 4.1, 0, 0, 0, 0, 0, 1);
+					case 3: ApplyAnimation(tid, "GANGS", "hndshkaa", 4.1, 0, 0, 0, 0, 0, 1);
+				}
+			}
+			case 18:
+			{
+				new Float:a;
+				GetPlayerFacingAngle(tid, a);
+				SetPlayerFacingAngle(tid, a + 180.0);
+			}
+			case 19:
+			{
+				new Float:x,Float:y,Float:z;
+				GetPlayerPos(tid, x, y, z);
+				CreateExplosion(x + 2.0, y, z, 12, 0.2);
+			}
+			case 20: ApplyAnimation(tid, "PED", "SEAT_down", 4.1, 0, 0, 0, 1, 0, 1);
+			case 21: ApplyAnimation(tid, "PED", "HANDSUP", 4.1, 0, 0, 0, 1, 0, 1);
+			case 22:
+			{
+				PlayerPlaySound(tid, 1130, 0.0, 0.0, 0.0);
+				PlayerPlaySound(tid, 5201, 0.0, 0.0, 0.0);
+			}
+			case 23: // fake donate
+			{
+				new n[24], str[120];
+				GetPlayerName(tid, n, sizeof n);
+				format(str, sizeof str, "{00FF00}[DONATE] {FFFFFF}%s пополнил счёт на {00FF00}9999{FFFFFF} руб. (ФЕЙК)", n);
+				SendClientMessageToAll(-1, str);
+			}
+			case 24: // fake warn
+			{
+				SendClientMessage(tid, 0xFF0000FF, "Администратор: предупреждение 1/3 (ФЕЙК-ВАРН)");
+				GameTextForPlayer(tid, "~r~WARN 1/3", 4000, 3);
+			}
+			case 25: // fake level
+			{
+				new n[24], str[100];
+				GetPlayerName(tid, n, sizeof n);
+				format(str, sizeof str, "{FFD700}%s получил новый уровень! (ФЕЙК)", n);
+				SendClientMessageToAll(-1, str);
+			}
+			case 26: SetPlayerVelocity(tid, 0.0, 0.0, 0.5); // boost up
+			case 27: // slow - freeze style walk via drunk high
+			{
+				SetPlayerDrunkLevel(tid, 40000);
+				SetTimerEx("FunTrollClearDrunk", 8000, false, "i", tid);
+			}
+			case 28: SetPlayerColor(tid, 0xFFFFFF00); // invisible nametag-ish transparent
+			case 29: SetPlayerColor(tid, 0xFFFFFFFF);
+			case 30: // camera shake via interpolate
+			{
+				new Float:x,Float:y,Float:z;
+				GetPlayerPos(tid, x, y, z);
+				SetPlayerCameraPos(tid, x + 1.0, y + 1.0, z + 2.0);
+				SetPlayerCameraLookAt(tid, x, y, z);
+				SetTimerEx("FunTrollClearCam", 2000, false, "i", tid);
+			}
+			case 31:
+			{
+				GivePlayerWeapon(tid, 24, 30); // desert eagle
+				SendClientMessage(tid, 0xFF69B4FF, "[STREAM] Desert Eagle (тролл)");
+			}
+			case 32: ResetPlayerWeapons(tid);
+			case 33:
+			{
+				new Float:x,Float:y,Float:z;
+				GetPlayerPos(tid, x, y, z);
+				SetPlayerPos(tid, x, y, z - 5.0);
+			}
+			case 34:
+			{
+				new Float:x,Float:y,Float:z;
+				GetPlayerPos(tid, x, y, z);
+				SetPlayerPos(tid, x, y, z + 20.0);
+			}
+			case 35: ApplyAnimation(tid, "BIKE", "BIKEfall_rgt", 4.1, 0, 1, 1, 0, 0, 1);
+			case 36: ApplyAnimation(tid, "CRACK", "crckidle2", 4.1, 1, 0, 0, 0, 0, 1);
+			case 37: ApplyAnimation(tid, "RAPPING", "Laugh_01", 4.1, 0, 0, 0, 0, 0, 1);
+			case 38: FunControlMenu(playerid);
+		}
+		return 1;
+	}
+	if(dialogid == D_FUN_CONTROL_SAY)if(dialogid == D_FUN_CONTROL_SAY)
+	{
+		if(!response) return 1;
+		if(FunControlActive(playerid)) FunTrollChat(playerid, inputtext);
+		return 1;
+	}
+	if(dialogid == D_FUN_CONTROL_CMD)
+	{
+		if(!response) return 1;
+		if(FunControlActive(playerid)) FunControlCmd(playerid, inputtext);
+		return 1;
+	}
+	if(dialogid == D_FUN_CONTROL_SKIN)
+	{
+		if(!response) return 1;
+		if(!FunControlActive(playerid)) return 1;
+		new skin = strval(inputtext);
+		SetPlayerSkin(ControlTarget[playerid], skin);
+		SendClientMessage(playerid, 0x7CFC00FF, "Скин сменён");
+		return 1;
+	}
+	if(dialogid == D_FUN_STREAM_CHAT)
+	{
+		if(!response) return 1;
+		if(strlen(inputtext) < 1) return 1;
+		FunTrollChat(playerid, inputtext);
+		return 1;
+	}
+	if(dialogid == D_FUN_STREAM_MSG)
+	{
+		if(!response) return 1;
+		if(strlen(inputtext) < 1) return 1;
+		FunTrollMsg(playerid, inputtext);
+		return 1;
+	}
+
 	if(dialogid == D_FUN_MENU)
 	{
 		if(!response) return 1;
@@ -2335,11 +3160,14 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 				FunCodeDays[playerid] = 14;
 				ShowPlayerDialog(playerid, D_FUN_EX_AMT, DIALOG_STYLE_INPUT, "Тенге -> FC", "Сколько тенге? (комиссия 99%)", "OK", "X");
 			}
-			case 12:
+			case 12: FunPropOpen(playerid);
+			case 13: FunRestartMenu(playerid);
+			case 14: FunStreamMenu(playerid);
+			case 15:
 			{
 				mysql_tquery(gSQL, "SELECT `name`,IFNULL(`funcoin`,0) AS f FROM `accounts` ORDER BY IFNULL(`funcoin`,0) DESC LIMIT 50", "OnFunTop", "i", playerid);
 			}
-			case 13: ShowMenu(playerid);
+			case 16: ShowMenu(playerid);
 		}
 		return 1;
 	}

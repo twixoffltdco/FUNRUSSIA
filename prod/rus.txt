@@ -1,48 +1,9 @@
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(126) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(127) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(128) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(129) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(130) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(148) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(149) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(150) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(151) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(152) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(163) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(206) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(209) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(217) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(225) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(226) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(227) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(228) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(229) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(230) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(238) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(241) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(261) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(264) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(358) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(359) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(387) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(387) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(395) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(398) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(406) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(416) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(417) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(421) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(422) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(435) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(438) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(460) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\AccessGate.pwn(463) : предупреждение 213: несовпадение типов
 Pawn compiler 3.2.3664	 	 	Copyright (c) 1997-2016, ITB CompuPhase
 
-Размер заголовка:	    1028 байт
-Размер кода:		   19236 байт
-Размер данных:		  219220 байт
-Размер стэка\кучи:	   16384 байт; Примерное макс. использование=627 ячеек (2508 байт)
-Всего требуется:	  255868 байт
+Размер заголовка:	    2928 байт
+Размер кода:		  150448 байт
+Размер данных:		  623660 байт
+Размер стэка\кучи:	   16384 байт; Примерное макс. использование=2171 ячеек (8684 байт)
+Всего требуется:	  793420 байт
 
-Предупреждений:39.
+Готово.
