@@ -31,6 +31,8 @@
 new MySQL:FT_SQL;
 new bool:FT_SQLOk;
 new bool:FT_Trial[MAX_PLAYERS];
+new bool:FT_Expired[MAX_PLAYERS];
+new bool:FT_LoadRequested[MAX_PLAYERS];
 new FT_EndAt[MAX_PLAYERS];
 new FT_Acc[MAX_PLAYERS];
 new FT_TickTimer;
@@ -39,6 +41,7 @@ forward FT_Load(playerid);
 forward FT_OnLoad(playerid);
 forward FT_Minute();
 forward FT_KickTrial(playerid);
+forward FT_OnKickCheck(playerid, accountid);
 
 public OnFilterScriptInit()
 {
@@ -66,6 +69,8 @@ public OnFilterScriptExit()
 public OnPlayerConnect(playerid)
 {
 	FT_Trial[playerid] = false;
+	FT_Expired[playerid] = false;
+	FT_LoadRequested[playerid] = false;
 	FT_EndAt[playerid] = 0;
 	FT_Acc[playerid] = 0;
 	return 1;
@@ -126,7 +131,11 @@ public OnPlayerCommandText(playerid, cmdtext[])
 public OnPlayerRequestClass(playerid, classid)
 {
 	#pragma unused classid
-	if(FT_SQLOk) SetTimerEx("FT_Load", 8000, false, "i", playerid);
+	if(FT_SQLOk && !FT_LoadRequested[playerid])
+	{
+		FT_LoadRequested[playerid] = true;
+		SetTimerEx("FT_Load", 8000, false, "i", playerid);
+	}
 	return 1;
 }
 
@@ -153,20 +162,25 @@ public FT_OnLoad(playerid)
 	new used = cache_get_row_int(0, 3, FT_SQL);
 	FT_Acc[playerid] = acc;
 
-	// полный доступ — триал не нужен
+	// Полный доступ — триал не нужен.
 	if(ok == 1)
 	{
 		FT_Trial[playerid] = false;
+		FT_Expired[playerid] = false;
 		return 1;
 	}
 
 	new nowt = gettime();
 
-	// уже был триал и истёк
-	if(used == 1 && tend > 0 && tend <= nowt)
+	// Триал уже использован и истёк: не разрешаем обход ограничений.
+	if(used == 1 && tend <= nowt)
 	{
-		FT_Trial[playerid] = false;
-		SendClientMessage(playerid, 0xFF4444FF, "[Триал] 5 часов закончились. Купи доступ (спецкод / Max), чтобы играть дальше.");
+		FT_Trial[playerid] = true;
+		FT_Expired[playerid] = true;
+		FT_EndAt[playerid] = tend;
+		SetPlayerVirtualWorld(playerid, FT_VW_BASE + playerid);
+		SendClientMessage(playerid, 0xFF4444FF, "[Триал] Бесплатное время закончено. Купи доступ и переподключись.");
+		SetTimerEx("FT_KickTrial", 15000, false, "i", playerid);
 		return 1;
 	}
 
@@ -174,6 +188,7 @@ public FT_OnLoad(playerid)
 	if(tend > nowt)
 	{
 		FT_Trial[playerid] = true;
+		FT_Expired[playerid] = false;
 		FT_EndAt[playerid] = tend;
 		SetPlayerVirtualWorld(playerid, FT_VW_BASE + playerid);
 		FT_Announce(playerid);
@@ -184,6 +199,7 @@ public FT_OnLoad(playerid)
 	if(used == 0 && ok == 0)
 	{
 		FT_Trial[playerid] = true;
+		FT_Expired[playerid] = false;
 		FT_EndAt[playerid] = nowt + FT_TRIAL_SEC;
 		SetPlayerVirtualWorld(playerid, FT_VW_BASE + playerid);
 		new q[180];
@@ -238,10 +254,10 @@ public FT_Minute()
 	new nowt = gettime();
 	for(new i; i < MAX_PLAYERS; i++)
 	{
-		if(!IsPlayerConnected(i) || !FT_Trial[i]) continue;
+		if(!IsPlayerConnected(i) || !FT_Trial[i] || FT_Expired[i]) continue;
 		if(FT_EndAt[i] <= nowt)
 		{
-			FT_Trial[i] = false;
+			FT_Expired[i] = true;
 			SendClientMessage(i, 0xFF4444FF, "[Триал] 5 часов вышли. Купи доступ, чтобы играть с игроками.");
 			GameTextForPlayer(i, "~r~Trial ended", 5000, 3);
 			SetTimerEx("FT_KickTrial", 15000, false, "i", i);
@@ -254,8 +270,27 @@ public FT_Minute()
 
 public FT_KickTrial(playerid)
 {
-	if(!IsPlayerConnected(playerid)) return 1;
-	// не кикаем жёстко если уже купил access — AccessGate сам пустит при релоге
-	SendClientMessage(playerid, 0xFF4444FF, "Релогнись после покупки доступа. Триал завершён.");
+	if(!IsPlayerConnected(playerid) || !FT_Expired[playerid] || !FT_SQLOk || FT_Acc[playerid] <= 0) return 1;
+	new q[160];
+	mysql_format(FT_SQL, q, sizeof q,
+		"SELECT IFNULL(`access_ok`,0) FROM `accounts` WHERE `id`=%d LIMIT 1",
+		FT_Acc[playerid]);
+	mysql_tquery(FT_SQL, q, "FT_OnKickCheck", "ii", playerid, FT_Acc[playerid]);
+	return 1;
+}
+
+public FT_OnKickCheck(playerid, accountid)
+{
+	if(!IsPlayerConnected(playerid) || FT_Acc[playerid] != accountid || !FT_Expired[playerid]) return 1;
+	if(cache_get_row_count(FT_SQL) > 0 && cache_get_row_int(0, 0, FT_SQL) == 1)
+	{
+		FT_Trial[playerid] = false;
+		FT_Expired[playerid] = false;
+		SetPlayerVirtualWorld(playerid, 0);
+		SendClientMessage(playerid, 0x7CFC00FF, "Доступ активирован. Приятной игры!");
+		return 1;
+	}
+	SendClientMessage(playerid, 0xFF4444FF, "Триал завершён. После покупки доступа переподключись.");
+	Kick(playerid);
 	return 1;
 }
