@@ -778,6 +778,86 @@ stock SaveEuro(playerid)
 	return 1;
 }
 
+// Safe PVZ payout queue shared through player PVars; no CallRemoteFunction is used.
+stock FR_PVZ_ProcessPendingEuro(playerid)
+{
+    if(!IsPlayerConnected(playerid)) return 0;
+    new amount = GetPVarInt(playerid, "FR_PVZ_PENDING_EURO");
+    if(amount <= 0 || amount > 10000) return 0;
+    if(!gSQLOk || !PlayerLoaded[playerid] || PlayerAccID[playerid] < 1) return 0;
+    if(PlayerEuro[playerid] > 2147483647 - amount)
+    {
+        DeletePVar(playerid, "FR_PVZ_PENDING_EURO");
+        SendClientMessage(playerid, COLOR_ERR, "[ПВЗ] Выплата отменена: достигнут предел баланса евро.");
+        return 0;
+    }
+    DeletePVar(playerid, "FR_PVZ_PENDING_EURO");
+    PlayerEuro[playerid] += amount;
+    SaveEuro(playerid);
+    new msg[96];
+    format(msg, sizeof msg, "[ПВЗ] Начислено %d евро за доставку.", amount);
+    SendClientMessage(playerid, COLOR_EURO, msg);
+    return 1;
+}
+forward FR_PVZ_ProcessPendingEuroTimer();
+public FR_PVZ_ProcessPendingEuroTimer()
+{
+    for(new playerid = 0; playerid < MAX_PLAYERS; playerid++)
+        if(IsPlayerConnected(playerid))
+        {
+            FR_PVZ_ProcessPendingEuro(playerid);
+            FR_PVZ_ProcessPendingFC(playerid);
+            FR_PVZ_ProcessPendingBit(playerid);
+        }
+    return 1;
+}
+
+// Safe PVZ FunCoin payout queue. The filterscript only queues the amount in a PVar;
+// this code updates the existing FunCoin balance and saves it through EuroSystem.
+stock FR_PVZ_ProcessPendingFC(playerid)
+{
+    if(!IsPlayerConnected(playerid)) return 0;
+    new amount = GetPVarInt(playerid, "FR_PVZ_PENDING_FC");
+    if(amount <= 0 || amount > 10000) return 0;
+    if(!gSQLOk || !PlayerLoaded[playerid] || PlayerAccID[playerid] < 1) return 0;
+    if(PlayerFun[playerid] > 2147483647 - amount)
+    {
+        DeletePVar(playerid, "FR_PVZ_PENDING_FC");
+        SendClientMessage(playerid, COLOR_ERR, "[ПВЗ] Выплата FunCoin отменена: достигнут предел баланса.");
+        return 0;
+    }
+    DeletePVar(playerid, "FR_PVZ_PENDING_FC");
+    PlayerFun[playerid] += amount;
+    SaveEuro(playerid);
+    new msg[96];
+    format(msg, sizeof msg, "[ПВЗ] Начислено %d FunCoin за доставку.", amount);
+    SendClientMessage(playerid, 0xFFD700FF, msg);
+    return 1;
+}
+
+
+// Safe PVZ bitcoin payout queue; uses the existing PlayerBit balance and accounts.bitok.
+stock FR_PVZ_ProcessPendingBit(playerid)
+{
+    if(!IsPlayerConnected(playerid)) return 0;
+    new amount = GetPVarInt(playerid, "FR_PVZ_PENDING_BIT");
+    if(amount <= 0 || amount > 10000) return 0;
+    if(!gSQLOk || !PlayerLoaded[playerid] || PlayerAccID[playerid] < 1) return 0;
+    if(PlayerBit[playerid] > 2147483647 - amount)
+    {
+        DeletePVar(playerid, "FR_PVZ_PENDING_BIT");
+        SendClientMessage(playerid, COLOR_ERR, "[ПВЗ] Выплата битков отменена: достигнут предел баланса.");
+        return 0;
+    }
+    DeletePVar(playerid, "FR_PVZ_PENDING_BIT");
+    PlayerBit[playerid] += amount;
+    SaveEuro(playerid);
+    new msg[96];
+    format(msg, sizeof msg, "[ПВЗ] Начислено %d битков за доставку.", amount);
+    SendClientMessage(playerid, 0x00BFFFFF, msg);
+    return 1;
+}
+
 // Timer callback must be public: stock functions cannot be called by SetTimerEx.
 forward LoadEuro(playerid);
 public LoadEuro(playerid)
@@ -2186,6 +2266,10 @@ stock ShowMemeMenu(playerid)
 	return 1;
 }
 
+
+
+
+
 stock Cmd(playerid, cmd[])
 {
 	if(!strcmp(cmd, "euro", true) || !strcmp(cmd, "eurobal", true)) return ShowMenu(playerid);
@@ -2799,6 +2883,7 @@ public OnFilterScriptInit()
 	SetTimer("MemeAnnounce", MEME_ANNOUNCE_MS, true);
 	SetTimer("MemeCheckSeasonTick", 60000, true);
 	SetTimer("PlaytimeTick", 1000, true);
+	SetTimer("FR_PVZ_ProcessPendingEuroTimer", 1000, true);
 	print("[Euro+Bit+Meme] OK");
 	return 1;
 }
@@ -2829,6 +2914,7 @@ public OnPlayerConnect(playerid)
 
 public OnPlayerDisconnect(playerid, reason)
 {
+	if(playerid >= 0 && playerid < MAX_PLAYERS) FR_PVZ_ProcessPendingEuro(playerid);
 	EuroGuiDlgDestroy(playerid);
 	#pragma unused reason
 	if(playerid < 0 || playerid >= MAX_PLAYERS) return 1;
@@ -3867,3 +3953,4 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 	if(dialogid == D_EURO_TOP || dialogid == D_BIT_TOP || dialogid == D_MEME_TOP || dialogid == D_UAH_TOP || dialogid == D_KZT_TOP) return 1;
 	return 0;
 }
+

@@ -1824,6 +1824,193 @@ stock ShowMemeMenu(playerid)
 	return 1;
 }
 
+
+// ===================== FUNCOIN DUELS (integrated into EuroSystem) =====================
+#define D_FR_DUEL_INVITE       29600
+#define D_FR_DUEL_RULES        29601
+#define FR_DUEL_NONE           (0)
+#define FR_DUEL_OUTGOING       (1)
+#define FR_DUEL_INCOMING       (2)
+#define FR_DUEL_FIGHT          (3)
+#define FR_DUEL_WORLD_BASE     (7300)
+#define FR_DUEL_MAX_STAKE      (1000000)
+new FRDuelState[MAX_PLAYERS], FRDuelOpponent[MAX_PLAYERS], FRDuelWinsNeeded[MAX_PLAYERS];
+new FRDuelWins[MAX_PLAYERS], FRDuelStake[MAX_PLAYERS], FRDuelWorld[MAX_PLAYERS], FRDuelWorldCounter = FR_DUEL_WORLD_BASE;
+new bool:FRDuelRestore[MAX_PLAYERS];
+new Float:FRDuelOldX[MAX_PLAYERS], Float:FRDuelOldY[MAX_PLAYERS], Float:FRDuelOldZ[MAX_PLAYERS], Float:FRDuelOldA[MAX_PLAYERS];
+new Float:FRDuelOldHealth[MAX_PLAYERS], Float:FRDuelOldArmour[MAX_PLAYERS];
+new FRDuelOldWorld[MAX_PLAYERS], FRDuelOldInterior[MAX_PLAYERS];
+new FRDuelOldWeapons[MAX_PLAYERS][13], FRDuelOldAmmo[MAX_PLAYERS][13];
+new Float:FRDuelArenaX[MAX_PLAYERS], Float:FRDuelArenaY[MAX_PLAYERS], Float:FRDuelArenaZ[MAX_PLAYERS];
+
+stock FRDuel_ResetVars(playerid)
+{
+    FRDuelState[playerid] = FR_DUEL_NONE; FRDuelOpponent[playerid] = INVALID_PLAYER_ID;
+    FRDuelWinsNeeded[playerid] = 1; FRDuelWins[playerid] = 0; FRDuelStake[playerid] = 0;
+    FRDuelRestore[playerid] = false;
+    return 1;
+}
+stock FRDuel_SaveState(playerid)
+{
+    GetPlayerPos(playerid, FRDuelOldX[playerid], FRDuelOldY[playerid], FRDuelOldZ[playerid]);
+    GetPlayerFacingAngle(playerid, FRDuelOldA[playerid]);
+    GetPlayerHealth(playerid, FRDuelOldHealth[playerid]); GetPlayerArmour(playerid, FRDuelOldArmour[playerid]);
+    FRDuelOldWorld[playerid] = GetPlayerVirtualWorld(playerid); FRDuelOldInterior[playerid] = GetPlayerInterior(playerid);
+    for(new s; s < 13; s++) GetPlayerWeaponData(playerid, s, FRDuelOldWeapons[playerid][s], FRDuelOldAmmo[playerid][s]);
+    return 1;
+}
+stock FRDuel_Restore(playerid)
+{
+    if(!IsPlayerConnected(playerid)) return 0;
+    SetPlayerVirtualWorld(playerid, FRDuelOldWorld[playerid]); SetPlayerInterior(playerid, FRDuelOldInterior[playerid]);
+    SetPlayerPos(playerid, FRDuelOldX[playerid], FRDuelOldY[playerid], FRDuelOldZ[playerid]); SetPlayerFacingAngle(playerid, FRDuelOldA[playerid]);
+    SetPlayerHealth(playerid, FRDuelOldHealth[playerid]); SetPlayerArmour(playerid, FRDuelOldArmour[playerid]); ResetPlayerWeapons(playerid);
+    for(new s; s < 13; s++) if(FRDuelOldWeapons[playerid][s] > 0 && FRDuelOldAmmo[playerid][s] > 0) GivePlayerWeapon(playerid, FRDuelOldWeapons[playerid][s], FRDuelOldAmmo[playerid][s]);
+    TogglePlayerControllable(playerid, true); return 1;
+}
+stock FRDuel_SetRound(player1, player2)
+{
+    if(!IsPlayerConnected(player1) || !IsPlayerConnected(player2)) return 0;
+    SetPlayerVirtualWorld(player1, FRDuelWorld[player1]); SetPlayerVirtualWorld(player2, FRDuelWorld[player2]);
+    SetPlayerInterior(player1, FRDuelArenaInterior[player1]); SetPlayerInterior(player2, FRDuelArenaInterior[player2]);
+    SetPlayerPos(player1, FRDuelArenaX[player1], FRDuelArenaY[player1], FRDuelArenaZ[player1]);
+    SetPlayerPos(player2, FRDuelArenaX[player2], FRDuelArenaY[player2], FRDuelArenaZ[player2]);
+    ResetPlayerWeapons(player1); ResetPlayerWeapons(player2);
+    GivePlayerWeapon(player1, 24, 300); GivePlayerWeapon(player2, 24, 300);
+    SetPlayerHealth(player1, 100.0); SetPlayerHealth(player2, 100.0); SetPlayerArmour(player1, 0.0); SetPlayerArmour(player2, 0.0);
+    TogglePlayerControllable(player1, false); TogglePlayerControllable(player2, false);
+    GameTextForPlayer(player1, "~y~DUEL~n~~w~GET READY", 2000, 3); GameTextForPlayer(player2, "~y~DUEL~n~~w~GET READY", 2000, 3);
+    SetTimerEx("FRDuel_Unfreeze", 2000, false, "dd", player1, player2); return 1;
+}
+forward FRDuel_Unfreeze(player1, player2);
+public FRDuel_Unfreeze(player1, player2)
+{
+    if(IsPlayerConnected(player1) && IsPlayerConnected(player2) && FRDuelState[player1] == FR_DUEL_FIGHT && FRDuelState[player2] == FR_DUEL_FIGHT)
+    { TogglePlayerControllable(player1, true); TogglePlayerControllable(player2, true); GameTextForPlayer(player1, "~g~FIGHT!", 1000, 3); GameTextForPlayer(player2, "~g~FIGHT!", 1000, 3); }
+    return 1;
+}
+stock FRDuel_Finish(winner, loser, bool:disconnecting = false)
+{
+    if(!IsPlayerConnected(winner)) return 0;
+    new stake = FRDuelStake[winner];
+    if(stake > 0) { PlayerFun[winner] += stake * 2; SaveEuro(winner); }
+    new msg[160], wn[MAX_PLAYER_NAME], ln[MAX_PLAYER_NAME]; GetPlayerName(winner, wn, sizeof wn);
+    if(IsPlayerConnected(loser)) GetPlayerName(loser, ln, sizeof ln); else format(ln, sizeof ln, "вышедший игрок");
+    format(msg, sizeof msg, "[DUEL] Вы победили %s! Получено %d FC.", ln, stake * 2); SendClientMessage(winner, 0x2ECC71FF, msg);
+    if(!disconnecting && IsPlayerConnected(loser)) { format(msg, sizeof msg, "[DUEL] Вы проиграли %s.", wn); SendClientMessage(loser, 0xE74C3CFF, msg); }
+    FRDuelState[winner] = FR_DUEL_NONE; FRDuelOpponent[winner] = INVALID_PLAYER_ID; FRDuelStake[winner] = 0;
+    FRDuelRestore[winner] = true; FRDuel_Restore(winner); FRDuelRestore[winner] = false;
+    if(!disconnecting && IsPlayerConnected(loser)) { FRDuelState[loser] = FR_DUEL_NONE; FRDuelOpponent[loser] = INVALID_PLAYER_ID; FRDuelStake[loser] = 0; FRDuelRestore[loser] = true; SpawnPlayer(loser); }
+    return 1;
+}
+stock FRDuel_HandleCommand(playerid, fulltext[])
+{
+    new command[128], params[96];
+    format(command, sizeof command, "%s", fulltext);
+    if(command[0] == '/' || command[0] == '.') strdel(command, 0, 1);
+    new space = strfind(command, " ");
+    if(space != -1) { strmid(params, command, space + 1, strlen(command), sizeof params); command[space] = 0; } else params[0] = 0;
+    if(!strcmp(command, "duelaccept", true) || !strcmp(command, "duelyes", true))
+    {
+        if(FRDuelState[playerid] != FR_DUEL_INCOMING) return SendClientMessage(playerid, COLOR_ERR, "У вас нет входящего вызова на дуэль."), 1;
+        new challenger = FRDuelOpponent[playerid];
+        if(!IsPlayerConnected(challenger) || FRDuelState[challenger] != FR_DUEL_OUTGOING) { FRDuel_ResetVars(playerid); return SendClientMessage(playerid, COLOR_ERR, "Вызов уже недоступен."), 1; }
+        if(!PlayerLoaded[playerid] || !PlayerLoaded[challenger]) return SendClientMessage(playerid, COLOR_ERR, "Дождитесь загрузки баланса FunCoin."), 1;
+        new stake = FRDuelStake[playerid];
+        if(PlayerFun[playerid] < stake || PlayerFun[challenger] < stake) { SendClientMessage(playerid, COLOR_ERR, "У одного из игроков недостаточно FunCoin."); SendClientMessage(challenger, COLOR_ERR, "У одного из игроков недостаточно FunCoin."); FRDuel_ResetVars(playerid); FRDuel_ResetVars(challenger); return 1; }
+        if(stake > 0) { PlayerFun[playerid] -= stake; PlayerFun[challenger] -= stake; SaveEuro(playerid); SaveEuro(challenger); }
+        FRDuel_SaveState(playerid); FRDuel_SaveState(challenger);
+        new Float:x, Float:y, Float:z; GetPlayerPos(challenger, x, y, z);
+        FRDuelWorldCounter++; if(FRDuelWorldCounter > 200000) FRDuelWorldCounter = FR_DUEL_WORLD_BASE;
+        FRDuelArenaX[challenger] = x; FRDuelArenaY[challenger] = y; FRDuelArenaZ[challenger] = z;
+        FRDuelArenaX[playerid] = x + 4.0; FRDuelArenaY[playerid] = y; FRDuelArenaZ[playerid] = z;
+        FRDuelState[playerid] = FR_DUEL_FIGHT; FRDuelState[challenger] = FR_DUEL_FIGHT;
+        FRDuelWorld[playerid] = FRDuelWorldCounter; FRDuelWorld[challenger] = FRDuelWorldCounter;
+        FRDuelArenaInterior[playerid] = FRDuelOldInterior[challenger]; FRDuelArenaInterior[challenger] = FRDuelOldInterior[challenger];
+        FRDuelOpponent[playerid] = challenger; FRDuelOpponent[challenger] = playerid;
+        FRDuelWins[playerid] = FRDuelWins[challenger] = 0;
+        FRDuel_SetRound(challenger, playerid);
+        SendClientMessage(challenger, 0x2ECC71FF, "Дуэль принята! Вы перенесены в отдельный виртуальный мир."); SendClientMessage(playerid, 0x2ECC71FF, "Вы приняли дуэль!"); return 1;
+    }
+    if(!strcmp(command, "duelno", true) || !strcmp(command, "duelcancel", true))
+    {
+        new other = FRDuelOpponent[playerid];
+        if(other != INVALID_PLAYER_ID && IsPlayerConnected(other)) { SendClientMessage(other, COLOR_ERR, "Вызов на дуэль отменён/отклонён."); FRDuel_ResetVars(other); }
+        FRDuel_ResetVars(playerid); SendClientMessage(playerid, COLOR_ERR, "Дуэль отменена."); return 1;
+    }
+    if(!strcmp(command, "duel", true))
+    {
+        if(!PlayerLoaded[playerid] || PlayerAccID[playerid] < 1) return SendClientMessage(playerid, COLOR_ERR, "Дождитесь загрузки аккаунта и FunCoin."), 1;
+        if(FRDuelState[playerid] != FR_DUEL_NONE) return SendClientMessage(playerid, COLOR_ERR, "Вы уже участвуете в дуэли."), 1;
+        new target = strval(params), pos = strfind(params, " "), rounds = 1, stake = 0;
+        if(pos != -1) { new tail[64]; strmid(tail, params, pos + 1, strlen(params), sizeof tail); rounds = strval(tail); pos = strfind(tail, " "); if(pos != -1) { new tail2[32]; strmid(tail2, tail, pos + 1, strlen(tail), sizeof tail2); stake = strval(tail2); } }
+        if(target < 0 || target >= MAX_PLAYERS || target == playerid || !IsPlayerConnected(target)) return SendClientMessage(playerid, COLOR_ERR, "Использование: /duel [ID] [раунды 1-3] [ставка FC]"), 1;
+        if(!PlayerLoaded[target] || FRDuelState[target] != FR_DUEL_NONE) return SendClientMessage(playerid, COLOR_ERR, "Игрок не готов или уже участвует в дуэли."), 1;
+        if(rounds < 1 || rounds > 3 || stake < 0 || stake > FR_DUEL_MAX_STAKE) return SendClientMessage(playerid, COLOR_ERR, "Раунды: 1-3. Ставка: 0-1000000 FC."), 1;
+        if(PlayerFun[playerid] < stake) return SendClientMessage(playerid, COLOR_ERR, "Недостаточно FunCoin для такой ставки."), 1;
+        if(IsPlayerInAnyVehicle(playerid) || IsPlayerInAnyVehicle(target)) return SendClientMessage(playerid, COLOR_ERR, "Перед дуэлью оба игрока должны выйти из транспорта."), 1;
+        FRDuelState[playerid] = FR_DUEL_OUTGOING; FRDuelState[target] = FR_DUEL_INCOMING;
+        FRDuelOpponent[playerid] = target; FRDuelOpponent[target] = playerid;
+        FRDuelWinsNeeded[playerid] = FRDuelWinsNeeded[target] = rounds; FRDuelStake[playerid] = FRDuelStake[target] = stake;
+        new name[MAX_PLAYER_NAME], text[256]; GetPlayerName(playerid, name, sizeof name);
+        format(text, sizeof text, "Игрок %s вызывает вас на дуэль.\nДо победы нужно выиграть раундов: %d\nСтавка с каждого: %d FunCoin\nПобедитель получает общий банк.\n\nКоманды: /duelaccept или /duelno", name, rounds, stake);
+        #if defined EURO_GUI_DUEL_DIALOGS
+            EuroShowPlayerDialog(target, D_FR_DUEL_INVITE, DIALOG_STYLE_MSGBOX, "Дуэль FunCoin", text, "Принять", "Отклонить");
+        #else
+            ShowPlayerDialog(target, D_FR_DUEL_INVITE, DIALOG_STYLE_MSGBOX, "Дуэль FunCoin", text, "Принять", "Отклонить");
+        #endif
+        SendClientMessage(playerid, 0x2ECC71FF, "Вызов отправлен. Игрок должен принять его в течение 30 секунд."); SetTimerEx("FRDuel_InviteExpire", 30000, false, "dd", playerid, target); return 1;
+    }
+    return 0;
+}
+forward FRDuel_InviteExpire(playerid, target);
+public FRDuel_InviteExpire(playerid, target)
+{
+    if(IsPlayerConnected(playerid) && IsPlayerConnected(target) && FRDuelState[playerid] == FR_DUEL_OUTGOING && FRDuelOpponent[playerid] == target)
+    { FRDuel_ResetVars(playerid); FRDuel_ResetVars(target); SendClientMessage(playerid, COLOR_ERR, "Время ожидания дуэли истекло."); SendClientMessage(target, COLOR_ERR, "Время вызова на дуэль истекло."); }
+    return 1;
+}
+stock FRDuel_OnDeath(playerid, killerid)
+{
+    if(FRDuelState[playerid] != FR_DUEL_FIGHT) return 0;
+    new opponent = FRDuelOpponent[playerid];
+    if(opponent == INVALID_PLAYER_ID || !IsPlayerConnected(opponent)) { FRDuelRestore[playerid] = true; return 1; }
+    if(killerid != opponent) { // death without opponent kill is treated as a lost round, preventing endless matches
+        FRDuelWins[opponent]++;
+    } else FRDuelWins[opponent]++;
+    new msg[128]; format(msg, sizeof msg, "Раунд %d:%d", FRDuelWins[opponent], FRDuelWins[playerid]); SendClientMessage(opponent, 0xFFD700FF, msg); SendClientMessage(playerid, 0xFFD700FF, msg);
+    if(FRDuelWins[opponent] >= FRDuelWinsNeeded[opponent]) { FRDuel_Finish(opponent, playerid); return 1; }
+    FRDuelRestore[playerid] = true;
+    return 1;
+}
+stock FRDuel_OnSpawn(playerid)
+{
+    if(FRDuelRestore[playerid])
+    {
+        FRDuelRestore[playerid] = false;
+        if(FRDuelState[playerid] == FR_DUEL_FIGHT)
+        {
+            new other = FRDuelOpponent[playerid];
+            if(IsPlayerConnected(other)) FRDuel_SetRound(other, playerid);
+        }
+        else FRDuel_Restore(playerid);
+        return 1;
+    }
+    return 0;
+}
+stock FRDuel_OnDisconnect(playerid)
+{
+    new other = FRDuelOpponent[playerid];
+    if(other != INVALID_PLAYER_ID && IsPlayerConnected(other))
+    {
+        if(FRDuelState[playerid] == FR_DUEL_FIGHT) FRDuel_Finish(other, playerid, true);
+        else { FRDuel_ResetVars(other); SendClientMessage(other, COLOR_ERR, "Дуэль отменена: соперник отключился."); }
+    }
+    FRDuel_ResetVars(playerid); return 1;
+}
+// ===================== END FUNCOIN DUELS =====================
+
+
 stock Cmd(playerid, cmd[])
 {
 	if(!strcmp(cmd, "euro", true) || !strcmp(cmd, "eurobal", true)) return ShowMenu(playerid);
@@ -2434,6 +2621,7 @@ public OnFilterScriptExit()
 
 public OnPlayerConnect(playerid)
 {
+	FRDuel_ResetVars(playerid);
 	PlayerEuro[playerid] = 0; PlayerEuroEx[playerid] = 0; PlayerAccID[playerid] = 0;
 	PlayerBit[playerid] = 0; PlayerMeme[playerid] = 0; PlayerDonate[playerid] = 0;
 	PlayerUAH[playerid] = 0; PlayerKZT[playerid] = 0; PlayerFun[playerid] = 0; PlayerPlaySec[playerid] = 0; StreamerMode[playerid] = false; StreamTarget[playerid] = INVALID_PLAYER_ID; ControlTarget[playerid] = INVALID_PLAYER_ID; ControlUntil[playerid] = 0; ControlledBy[playerid] = INVALID_PLAYER_ID;
@@ -2449,6 +2637,7 @@ public OnPlayerConnect(playerid)
 
 public OnPlayerDisconnect(playerid, reason)
 {
+	if(playerid >= 0 && playerid < MAX_PLAYERS) FRDuel_OnDisconnect(playerid);
 	#pragma unused reason
 	if(playerid < 0 || playerid >= MAX_PLAYERS) return 1;
 	StreamerMode[playerid] = false;
@@ -2487,6 +2676,7 @@ public OnPlayerDisconnect(playerid, reason)
 
 public OnPlayerText(playerid, text[])
 {
+	if(text[0] == '.' && FRDuel_HandleCommand(playerid, text)) return 0;
 	if(text[0] != '.') return 1;
 	new cmd[40]; format(cmd, sizeof cmd, "%s", text[1]);
 	new sp = strfind(cmd, " "); if(sp != -1) cmd[sp] = 0;
@@ -2496,6 +2686,8 @@ public OnPlayerText(playerid, text[])
 
 public OnPlayerCommandText(playerid, cmdtext[])
 {
+	// Duel commands are dot-only: .duel, .duelaccept, .duelno.
+	// No slash dispatch for the duel system.
 	if(cmdtext[0] != '/') return 0;
 	new cmd[40]; format(cmd, sizeof cmd, "%s", cmdtext[1]);
 	new sp = strfind(cmd, " "); if(sp != -1) cmd[sp] = 0;
@@ -2505,6 +2697,11 @@ public OnPlayerCommandText(playerid, cmdtext[])
 
 public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 {
+	if(dialogid == D_FR_DUEL_INVITE)
+	{
+		if(response) return FRDuel_HandleCommand(playerid, ".duelaccept");
+		return FRDuel_HandleCommand(playerid, ".duelno");
+	}
 	if(dialogid == D_EURO_MENU)
 	{
 		if(!response) return 1;
@@ -3355,4 +3552,16 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 	}
 	if(dialogid == D_EURO_TOP || dialogid == D_BIT_TOP || dialogid == D_MEME_TOP || dialogid == D_UAH_TOP || dialogid == D_KZT_TOP) return 1;
 	return 0;
+}
+
+
+public OnPlayerDeath(playerid, killerid, reason)
+{
+	#pragma unused reason
+	return FRDuel_OnDeath(playerid, killerid);
+}
+
+public OnPlayerSpawn(playerid)
+{
+	return FRDuel_OnSpawn(playerid);
 }

@@ -1,0 +1,9 @@
+// Add this public bridge to the gamemode source AFTER marketplace.inc is included.
+// Then recompile the gamemode. This exposes the existing Marketplace reward GUI to the FS.
+forward FR_OpenMarketplaceRewards(playerid);
+public FR_OpenMarketplaceRewards(playerid)
+{
+    if(!IsPlayerConnected(playerid)) return 0;
+    if(!IsPlayerLogged(playerid)) return 0;
+    return MPReward_OpenGUI(playerid);
+}

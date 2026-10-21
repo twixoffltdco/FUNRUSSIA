@@ -1,0 +1,294 @@
+// system/pvz.inc
+// Sistema PVZ: punkty vydachi zakazov (vhod/vyhod/vydacha) + rabota "Dostavka gruza".
+#if defined _pvz_system_included
+	#endinput
+#endif
+#define _pvz_system_included
+
+// ---------------------------------------------------------------------
+// Punkty vydachi zakazov
+// ---------------------------------------------------------------------
+enum E_PICKUP_POINT
+{
+	pp_name[64],
+	Float:pp_enter_x, Float:pp_enter_y, Float:pp_enter_z, pp_enter_vw,
+	Float:pp_exit_x, Float:pp_exit_y, Float:pp_exit_z, pp_exit_vw, pp_exit_int,
+	Float:pp_inside_x, Float:pp_inside_y, Float:pp_inside_z,
+	pp_enter_pickup,
+	pp_exit_pickup
+}
+
+new PickupPoints[][E_PICKUP_POINT] =
+{
+	{"Батырево", 1803.149047, 2037.017944, 16.008436, 0, 2283.669921, 1836.158691, 1519.743286, 1, 1, 2282.679199, 1836.778442, 1519.743286, -1, -1},
+	{"Арзамас", 292.996765, 1541.501220, 12.156729, 0, 2283.669921, 1836.158691, 1519.743286, 1, 1, 2282.679199, 1836.778442, 1519.743286, -1, -1},
+	{"Арзамас", 614.631835, 579.856567, 12.188437, 0, 2283.669921, 1836.158691, 1519.743286, 1, 1, 2282.679199, 1836.778442, 1519.743286, -1, -1},
+	{"Южный", 2566.409179, -2516.000488, 22.119831, 0, 2283.669921, 1836.158691, 1519.743286, 1, 1, 2282.679199, 1836.778442, 1519.743286, -1, -1},
+	{"Южный", 2386.718017, -1708.890747, 22.084220, 0, 2283.669921, 1836.158691, 1519.743286, 1, 1, 2282.679199, 1836.778442, 1519.743286, -1, -1},
+	{"Бусаево", -528.563598, -1788.569946, 41.065799, 0, 2283.669921, 1836.158691, 1519.743286, 1, 1, 2282.679199, 1836.778442, 1519.743286, -1, -1},
+	{"Лыткарино", -2265.864746, -322.510284, 28.101448, 0, 2283.669921, 1836.158691, 1519.743286, 1, 1, 2282.679199, 1836.778442, 1519.743286, -1, -1},
+	{"Нижегородск", -2457.938476, 1134.409301, 10.855109, 0, 2283.669921, 1836.158691, 1519.743286, 1, 1, 2282.679199, 1836.778442, 1519.743286, -1, -1},
+	{"Нижегородск", -1824.447631, 2717.559814, 57.766563, 0, 2283.669921, 1836.158691, 1519.743286, 1, 1, 2282.679199, 1836.778442, 1519.743286, -1, -1}
+};
+
+// Obshchaya tochka vydachi gotovogo zakaza (vnutri PVZ)
+#define PVZ_REWARD_X (2287.283691)
+#define PVZ_REWARD_Y (1834.868408)
+#define PVZ_REWARD_Z (1519.743286)
+#define PVZ_REWARD_VW (1)
+
+#define PVZ_TP_COOLDOWN_MS (1500)
+
+new bool:g_PvzPointsCreated = false;
+new g_PvzRewardPickup = -1;
+
+stock CreatePickupPoints()
+{
+	if(g_PvzPointsCreated) return 1;
+
+	for(new i = 0; i < sizeof(PickupPoints); i++)
+	{
+		// Vhod (ulica)
+		PickupPoints[i][pp_enter_pickup] = CreatePickup(19132, 23,
+			PickupPoints[i][pp_enter_x], PickupPoints[i][pp_enter_y], PickupPoints[i][pp_enter_z],
+			PickupPoints[i][pp_enter_vw]);
+
+		// Vyhod (vnutri)
+		PickupPoints[i][pp_exit_pickup] = CreatePickup(19132, 23,
+			PickupPoints[i][pp_inside_x], PickupPoints[i][pp_inside_y], PickupPoints[i][pp_inside_z],
+			PickupPoints[i][pp_exit_vw]);
+
+		new label[128];
+		format(label, sizeof(label), "{33CCFF}Пункт выдачи заказов\n{FFFFFF}%s\n{66FF66}Вход", PickupPoints[i][pp_name]);
+		Create3DTextLabel(label, -1,
+			PickupPoints[i][pp_enter_x], PickupPoints[i][pp_enter_y], PickupPoints[i][pp_enter_z] + 1.0,
+			20.0, PickupPoints[i][pp_enter_vw]);
+
+		format(label, sizeof(label), "{33CCFF}Пункт выдачи заказов\n{FFFFFF}%s\n{FF6666}Выход из ПВЗ", PickupPoints[i][pp_name]);
+		Create3DTextLabel(label, -1,
+			PickupPoints[i][pp_inside_x], PickupPoints[i][pp_inside_y], PickupPoints[i][pp_inside_z] + 1.0,
+			12.0, PickupPoints[i][pp_exit_vw]);
+	}
+
+	g_PvzRewardPickup = CreatePickup(1239, 23, PVZ_REWARD_X, PVZ_REWARD_Y, PVZ_REWARD_Z, PVZ_REWARD_VW);
+	Create3DTextLabel("{33CCFF}Пункт выдачи заказов\n{FFFFFF}Забрать готовый заказ\n{66FF66}Встаньте на пикап, чтобы открыть выдачу", -1,
+		PVZ_REWARD_X, PVZ_REWARD_Y, PVZ_REWARD_Z + 0.9, 20.0, PVZ_REWARD_VW);
+
+	g_PvzPointsCreated = true;
+	return 1;
+}
+
+// Vyzyvat' iz OnPlayerPickUpPickupEx. Vozvrashchaet 1, esli pikap obrabotan.
+stock HandlePickupPoint(playerid, pickupid)
+{
+	new tick = GetTickCount();
+
+	if(pickupid == g_PvzRewardPickup)
+	{
+		if(!IsPlayerLogged(playerid)) return 1;
+		if(tick - GetPVarInt(playerid, "pvz_last_tp") < PVZ_TP_COOLDOWN_MS) return 1;
+		MPReward_OpenGUI(playerid);
+		return 1;
+	}
+
+	new msg[128];
+	for(new i = 0; i < sizeof(PickupPoints); i++)
+	{
+		if(pickupid == PickupPoints[i][pp_enter_pickup])
+		{
+			if(!IsPlayerLogged(playerid)) return 1;
+			if(tick - GetPVarInt(playerid, "pvz_last_tp") < PVZ_TP_COOLDOWN_MS) return 1;
+
+			SetPlayerPosEx(playerid, PickupPoints[i][pp_exit_x], PickupPoints[i][pp_exit_y], PickupPoints[i][pp_exit_z],
+				0.0, PickupPoints[i][pp_exit_int], PickupPoints[i][pp_exit_vw]);
+			SetPVarInt(playerid, "in_pickup_point", i);
+			SetPVarInt(playerid, "pvz_last_tp", tick);
+
+			format(msg, sizeof(msg), "{33aa33}| {ffffff}Вы вошли в ПВЗ \"%s\".", PickupPoints[i][pp_name]);
+			SendClientMessage(playerid, -1, msg);
+			return 1;
+		}
+		if(pickupid == PickupPoints[i][pp_exit_pickup])
+		{
+			if(tick - GetPVarInt(playerid, "pvz_last_tp") < PVZ_TP_COOLDOWN_MS) return 1;
+
+			SetPlayerPosEx(playerid, PickupPoints[i][pp_enter_x], PickupPoints[i][pp_enter_y], PickupPoints[i][pp_enter_z],
+				0.0, 0, PickupPoints[i][pp_enter_vw]);
+			DeletePVar(playerid, "in_pickup_point");
+			SetPVarInt(playerid, "pvz_last_tp", tick);
+
+			format(msg, sizeof(msg), "{33aa33}| {ffffff}Вы вышли из ПВЗ \"%s\".", PickupPoints[i][pp_name]);
+			SendClientMessage(playerid, -1, msg);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+// ---------------------------------------------------------------------
+// Rabota "Dostavka gruza" dlya PVZ
+// Nachal'nik -> /pvz -> zabrat' gruz na tochke -> /pvz (pogruzka) -> otvezti nachal'niku.
+// ---------------------------------------------------------------------
+#define PVZ_CARGO_NPC_MODEL         (6792)
+#define PVZ_CARGO_NPC_X             (2284.598144)
+#define PVZ_CARGO_NPC_Y             (1832.220703)
+#define PVZ_CARGO_NPC_Z             (1519.743286)
+#define PVZ_CARGO_NPC_A             (342.522583)
+#define PVZ_CARGO_NPC_INT           (1)
+#define PVZ_CARGO_NPC_VW            (1)
+
+#define PVZ_CARGO_BTN_X             (2285.099121)
+#define PVZ_CARGO_BTN_Y             (1834.363037)
+#define PVZ_CARGO_BTN_Z             (1519.743286)
+#define PVZ_CARGO_BTN_RADIUS        (2.5)
+
+#define PVZ_CARGO_TAKE_X            (2025.244262)
+#define PVZ_CARGO_TAKE_Y            (1398.201416)
+#define PVZ_CARGO_TAKE_Z            (26.196250)
+#define PVZ_CARGO_TAKE_RADIUS       (2.5)
+
+#define PVZ_CARGO_LOAD_TIME_MS      (5000)
+#define PVZ_CARGO_PAY               (3000)
+#define PVZ_CARGO_COOLDOWN_MS       (120000)
+#define PVZ_CARGO_OBJECT_MODEL      (2912)
+
+new g_PvzCargoNpc = INVALID_ACTOR_ID;
+new g_PvzCargoBossArea = -1;
+new g_PvzCargoTakeArea = -1;
+
+stock CreatePvzCargoJobNpc()
+{
+	if(g_PvzCargoNpc != INVALID_ACTOR_ID) return 1;
+
+	g_PvzCargoNpc = CreateActor(PVZ_CARGO_NPC_MODEL, PVZ_CARGO_NPC_X, PVZ_CARGO_NPC_Y, PVZ_CARGO_NPC_Z, PVZ_CARGO_NPC_A);
+	SetActorVirtualWorld(g_PvzCargoNpc, PVZ_CARGO_NPC_VW);
+	SetActorInvulnerable(g_PvzCargoNpc, true);
+
+	CreateDynamic3DTextLabel(
+		"{FFD429}Начальник\n{FFFFFF}Напишите {FFD429}/pvz{FFFFFF}, чтобы поговорить",
+		0xFFFFFFFF, PVZ_CARGO_NPC_X, PVZ_CARGO_NPC_Y, PVZ_CARGO_NPC_Z + 0.85, 18.0,
+		INVALID_PLAYER_ID, INVALID_VEHICLE_ID, 0, PVZ_CARGO_NPC_VW, PVZ_CARGO_NPC_INT);
+
+	g_PvzCargoBossArea = CreateDynamicSphere(PVZ_CARGO_BTN_X, PVZ_CARGO_BTN_Y, PVZ_CARGO_BTN_Z, PVZ_CARGO_BTN_RADIUS, PVZ_CARGO_NPC_VW, PVZ_CARGO_NPC_INT);
+	g_PvzCargoTakeArea = CreateDynamicSphere(PVZ_CARGO_TAKE_X, PVZ_CARGO_TAKE_Y, PVZ_CARGO_TAKE_Z, PVZ_CARGO_TAKE_RADIUS, 0, 0);
+	return 1;
+}
+
+// Vyzyvat' iz OnPlayerEnterDynamicArea.
+stock PvzCargo_OnEnterArea(playerid, areaid)
+{
+	if(areaid == g_PvzCargoBossArea)
+	{
+		SendClientMessage(playerid, -1, "{2299ee}| {FFFFFF}Напишите {FFD700}/pvz{FFFFFF}, чтобы начать работу.");
+		return 1;
+	}
+	if(areaid == g_PvzCargoTakeArea)
+	{
+		if(GetPVarInt(playerid, "pvz_cargo_accepted") && !GetPVarInt(playerid, "pvz_cargo_has"))
+			SendClientMessage(playerid, -1, "{2299ee}| {FFFFFF}Напишите {FFD700}/pvz{FFFFFF}, чтобы забрать груз.");
+		return 1;
+	}
+	return 0;
+}
+
+stock PvzCargo_AcceptJob(playerid)
+{
+	if(GetPVarInt(playerid, "pvz_cargo_has"))
+	{
+		SendClientMessage(playerid, -1, "{FF5252}| {FFFFFF}Груз уже у вас на руках, довезите его.");
+		return 1;
+	}
+
+	new cd = GetPVarInt(playerid, "pvz_cargo_cd");
+	if(cd != 0 && GetTickCount() - cd < PVZ_CARGO_COOLDOWN_MS)
+	{
+		new left = (PVZ_CARGO_COOLDOWN_MS - (GetTickCount() - cd)) / 1000;
+		new msg[96];
+		format(msg, sizeof(msg), "{FF5252}| {FFFFFF}Следующий заказ можно взять через %d сек.", left);
+		SendClientMessage(playerid, -1, msg);
+		return 1;
+	}
+
+	SetPVarInt(playerid, "pvz_cargo_accepted", 1);
+	DisablePlayerCheckpoint(playerid);
+	DisablePlayerGPS(playerid);
+	EnablePlayerGPS(playerid, 55, PVZ_CARGO_TAKE_X, PVZ_CARGO_TAKE_Y, PVZ_CARGO_TAKE_Z, "Забор груза отмечен на карте.");
+	SetPlayerCheckpoint(playerid, PVZ_CARGO_TAKE_X, PVZ_CARGO_TAKE_Y, PVZ_CARGO_TAKE_Z, 3.0);
+
+	SendClientMessage(playerid, -1, "{2299ee}| {FFFFFF}Есть работёнка. Нужно забрать груз, привезти сюда - и деньги твои.");
+	new msg2[96];
+	format(msg2, sizeof(msg2), "{2299ee}| {FFFFFF}За доставку заплачу {33aa33}%d рублей{FFFFFF}. Точка забора отмечена на карте.", PVZ_CARGO_PAY);
+	SendClientMessage(playerid, -1, msg2);
+	return 1;
+}
+
+stock PvzCargo_StartLoading(playerid)
+{
+	if(!GetPVarInt(playerid, "pvz_cargo_accepted"))
+	{
+		SendClientMessage(playerid, -1, "{FF5252}| {FFFFFF}У вас нет активного заказа.");
+		return 1;
+	}
+	if(GetPVarInt(playerid, "pvz_cargo_has")) return 1;
+	if(GetPVarInt(playerid, "pvz_cargo_loading")) return 1;
+
+	SetPVarInt(playerid, "pvz_cargo_loading", 1);
+	TogglePlayerControllable(playerid, false);
+	SendClientMessage(playerid, -1, "{2299ee}| {FFFFFF}Погрузка груза... подождите 5 секунд.");
+	SetTimerEx("PvzCargo_FinishLoad", PVZ_CARGO_LOAD_TIME_MS, false, "i", playerid);
+	return 1;
+}
+
+forward PvzCargo_FinishLoad(playerid);
+public PvzCargo_FinishLoad(playerid)
+{
+	if(!IsPlayerConnected(playerid)) return 1;
+	if(!GetPVarInt(playerid, "pvz_cargo_loading")) return 1;
+	DeletePVar(playerid, "pvz_cargo_loading");
+	DeletePVar(playerid, "pvz_cargo_accepted");
+
+	TogglePlayerControllable(playerid, true);
+
+	SetPVarInt(playerid, "pvz_cargo_has", 1);
+	SetPlayerAttachedObject(playerid, A_OBJECT_SLOT_SPINE, PVZ_CARGO_OBJECT_MODEL, A_OBJECT_BONE_SPINE,
+		0.0, 0.25, 0.15, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+
+	DisablePlayerCheckpoint(playerid);
+	DisablePlayerGPS(playerid);
+	EnablePlayerGPS(playerid, 55, PVZ_CARGO_NPC_X, PVZ_CARGO_NPC_Y, PVZ_CARGO_NPC_Z, "Точка сдачи груза отмечена на карте.");
+	SetPlayerCheckpoint(playerid, PVZ_CARGO_NPC_X, PVZ_CARGO_NPC_Y, PVZ_CARGO_NPC_Z, 3.0);
+	SendClientMessage(playerid, -1, "{2299ee}| {FFFFFF}Груз загружен. Отнесите его начальнику в пункте выдачи.");
+	return 1;
+}
+
+// Vyzyvat' v nachale OnPlayerEnterCheckpoint. Vozvrashchaet 1 tol'ko esli sdan gruz.
+stock PvzCargo_OnEnterPutCP(playerid)
+{
+	if(!GetPVarInt(playerid, "pvz_cargo_has")) return 0;
+	if(GetPlayerVirtualWorld(playerid) != PVZ_CARGO_NPC_VW) return 0;
+	if(!IsPlayerInRangeOfPoint(playerid, 6.0, PVZ_CARGO_NPC_X, PVZ_CARGO_NPC_Y, PVZ_CARGO_NPC_Z)) return 0;
+
+	DisablePlayerCheckpoint(playerid);
+	DisablePlayerGPS(playerid);
+	DeletePVar(playerid, "pvz_cargo_has");
+	RemovePlayerAttachedObject(playerid, A_OBJECT_SLOT_SPINE);
+
+	SetPVarInt(playerid, "pvz_cargo_cd", GetTickCount());
+	GivePlayerMoneyEx(playerid, PVZ_CARGO_PAY, "Доставка груза (ПВЗ)", true, true);
+
+	new msg[96];
+	format(msg, sizeof(msg), "{33aa33}| {FFFFFF}Груз доставлен! Вы получили {33aa33}%d руб.", PVZ_CARGO_PAY);
+	SendClientMessage(playerid, -1, msg);
+	return 1;
+}
+
+// /pvz - govorit' s nachal'nikom / zabrat' gruz na tochke
+CMD:pvz(playerid)
+{
+	if(!IsPlayerLogged(playerid)) return 1;
+	if(IsPlayerInDynamicArea(playerid, g_PvzCargoBossArea))
+		return PvzCargo_AcceptJob(playerid);
+	if(IsPlayerInDynamicArea(playerid, g_PvzCargoTakeArea))
+		return PvzCargo_StartLoading(playerid);
+	return SendClientMessage(playerid, 0x999999FF, "Вы находитесь не рядом с начальником ПВЗ и не на точке забора груза");
+}

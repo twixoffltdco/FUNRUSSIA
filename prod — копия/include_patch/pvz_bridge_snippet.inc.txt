@@ -1,0 +1,16 @@
+// Add to marketplace.inc in the MAIN GAMEMODE, then recompile the gamemode.
+forward FR_OpenMarketplaceRewards(playerid);
+public FR_OpenMarketplaceRewards(playerid)
+{
+    if(!IsPlayerLogged(playerid)) return 0;
+    MPReward_OpenGUI(playerid);
+    return 1;
+}
+
+forward FR_PVZ_Pay(playerid, amount);
+public FR_PVZ_Pay(playerid, amount)
+{
+    if(!IsPlayerLogged(playerid) || amount <= 0) return 0;
+    if(!GivePlayerMoneyEx(playerid, amount, "\xC4\xEE\xF1\xF2\xE0\xE2\xEA\xE0 \\xE3\\xF0\\xF3\\xE7\\xE0 (\\xCF\\xC2\\xC7)", true, true)) return 0;
+    return 1;
+}

@@ -1,29 +1,9 @@
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(48) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(49) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(52) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(53) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(65) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(85) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(88) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(147) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(150) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(157) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(159) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(160) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(161) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(162) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(206) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(209) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(275) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(278) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(285) : предупреждение 213: несовпадение типов
-C:\Users\slimp\Downloads\server (3)\filterscripts\FunTrial.pwn(285) : предупреждение 213: несовпадение типов
 Pawn compiler 3.2.3664	 	 	Copyright (c) 1997-2016, ITB CompuPhase
 
-Размер заголовка:	     900 байт
-Размер кода:		    7424 байт
-Размер данных:		   29616 байт
-Размер стэка\кучи:	   16384 байт; Примерное макс. использование=399 ячеек (1596 байт)
-Всего требуется:	   54324 байт
+Размер заголовка:	    1500 байт
+Размер кода:		   23040 байт
+Размер данных:		  150040 байт
+Размер стэка\кучи:	   16384 байт; Примерное макс. использование=427 ячеек (1708 байт)
+Всего требуется:	  190964 байт
 
-Предупреждений:20.
+Готово.
